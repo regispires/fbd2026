@@ -12,7 +12,7 @@ funcionais da aplicação.
 
 ### Diagrama ER
  
-![./docs/diagrama-eer.jpeg](./docs/diagrama-eer.jpeg)
+![./docs/diagrama-eer.jpg](./docs/diagrama-eer.jpg)
 
 O relacionamento entre as entidades foi modelado utilizando a notação EER de ... Pelo draw.io.
 
@@ -26,9 +26,10 @@ erDiagram
     USUARIO {
         int id PK
         string nome
+        blob foto_perfil
         string cpf
         string email
-        boolean admin
+        string papel
         string senha_hash
         date data_nascimento
     }
