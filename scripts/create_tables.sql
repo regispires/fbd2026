@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS inscricao_evento (
     status STATUS_INSCRICAO NOT NULL DEFAULT 'pendente',
     comentario_administrador TEXT,
     comprovante_usuario BYTEA,
+    valor FLOAT
 
     PRIMARY KEY (id_usuario,id_evento)
 );
