@@ -6,7 +6,23 @@ def start_app(): ...
 
 
 def main():
-    _ = ui.label("Exemplo FBD - Gestão de Eventos")
+
+    with ui.header(bordered=True, elevated=True).style(
+        "display: flex; align-items: center;"
+    ):
+        _ = ui.label("Exemplo FBD - Gestão de Eventos").style("font-size:150%")
+
+        _ = ui.space()
+        with ui.column():
+            dark_enabled = ui.dark_mode()
+            _ = (
+                ui.switch(text="Tema Escuro")
+                .bind_value(dark_enabled)
+                .props("color=accent")
+            )
+
+    with ui.page_scroller(position="bottom-right", x_offset=20, y_offset=20):
+        _ = ui.button("Voltar ao topo")
 
     _ = ui.run(port=8000)
 
