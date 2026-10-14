@@ -1,4 +1,7 @@
-from pydantic import SecretStr, computed_field
+from datetime import timedelta
+from typing import Literal
+
+from pydantic import SecretStr, computed_field, field_validator
 from pydantic.networks import PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -27,6 +30,19 @@ class Settings(BaseSettings):
     DATABASE_NAME: SecretStr
     DATABASE_HOST: str = "localhost"
     DATABASE_PORT: int = 5432
+
+    ENVIRONMENT: Literal["DEVELOPMENT", "PRODUCTION"]
+    SESSION_DURATION_HOURS: timedelta = timedelta(hours=24)
+
+    @field_validator("SESSION_DURATION_HOURS", mode="before")
+    @classmethod
+    def _converter_duration(cls, value: object) -> object:
+        """Transforma a duração da sessão em um timedelta"""
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return timedelta(hours=value)
+        if isinstance(value, str):
+            return timedelta(hours=float(value))
+        return value
 
 
 settings = Settings()  # pyright: ignore[reportCallIssue]

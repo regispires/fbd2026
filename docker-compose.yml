@@ -10,6 +10,8 @@ services:
       DATABASE_NAME: ${DATABASE_NAME}
       DATABASE_HOST: database
       DATABASE_PORT: ${DATABASE_PORT:-5432}
+      ENVIRONMENT: ${ENVIRONMENT:-DEVELOPMENT}
+      SESSION_DURATION_HOURS: ${SESSION_DURATION_HOURS:-24}
     restart: unless-stopped
     ports:
       - 8000:8000

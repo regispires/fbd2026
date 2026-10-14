@@ -84,8 +84,12 @@ class User:
                 result = session.execute(query, {"id": self.id})
             except IntegrityError as e:
                 raise UserHasDependencies from e
-            session.commit()
-            return result.rowcount == 1
+            if result.rowcount != 1:
+                session.rollback()
+                return False
+            else:
+                session.commit()
+                return True
 
     def get_event_inscriptions(self) -> list[EventInscription]:
         """Inscrições do usuário em eventos, com dados do evento para exibição."""
@@ -169,11 +173,10 @@ class UserList:
     def reload(self) -> None:
         query = text(
             """
-            SELECT u.id, u.nome, u.cpf::text, u.email, u.data_nascimento,
-                   u.papel, v.idade::int
-            FROM usuario u
-            JOIN usuario_com_idade v ON v.id = u.id
-            ORDER BY u.nome
+            SELECT id, nome, cpf::text, email, data_nascimento,
+                   papel, idade::int
+            FROM usuario_com_idade
+            ORDER BY nome
             """
         )
         with session_maker() as session:
@@ -187,11 +190,10 @@ def get_user(user_id: UUID) -> User:
     """Busca um usuário por id; lança ``UserNotFound`` se não existir."""
     query = text(
         """
-        SELECT u.id, u.nome, u.cpf::text, u.email, u.data_nascimento,
-               u.papel, v.idade::int
-        FROM usuario u
-        JOIN usuario_com_idade v ON v.id = u.id
-        WHERE u.id = :user_id
+        SELECT id, nome, cpf::text, email, data_nascimento,
+               papel, idade::int
+        FROM usuario_com_idade
+        WHERE id = :user_id
         LIMIT 1
         """
     )
@@ -254,9 +256,8 @@ def authenticate_user(email: str, password: str) -> User | None:
     query = text(
         """
         SELECT u.id, u.nome, u.cpf::text, u.email, u.data_nascimento,
-               u.papel, v.idade::int, u.senha_hash
+               u.papel, EXTRACT(YEARS FROM AGE(u.data_nascimento)) AS idade, u.senha_hash
         FROM usuario u
-        JOIN usuario_com_idade v ON v.id = u.id
         WHERE u.email = :email
         LIMIT 1
         """
