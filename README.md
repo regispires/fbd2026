@@ -14,7 +14,7 @@ funcionais da aplicação.
  
 ![./docs/diagrama-eer.jpg](./docs/diagrama-eer.jpg)
 
-O relacionamento entre as entidades foi modelado utilizando a notação EER de ... Pelo draw.io.
+O relacionamento entre as entidades foi modelado utilizando a notação EER de Elmasri & Navathe Pelo draw.io.
 
 ### Modelo Relacional
 
@@ -26,7 +26,6 @@ erDiagram
     USUARIO {
         int id PK
         string nome
-        blob foto_perfil
         string cpf
         string email
         string papel
@@ -51,26 +50,26 @@ erDiagram
         int numero PK
         string nome
         string descricao
+        string sala
+        int vagas
         datetime data_hora_inicio
         datetime data_hora_fim
-        string sala
     }
 
     INSCRICAO_EVENTO {
         int id_usuario PK, FK
         int id_evento PK, FK
         datetime data_inscricao
-        boolean presenca
         string status
+        string comentario_administrador
+        string comprovante_usuario BYTEA
+        float valor
     }
 
-    INSCRICAO_ATIVIDADE {
+    PRESENCA_ATIVIDADE {
         int id_usuario PK, FK
         int id_evento PK, FK
         int numero_atividade PK, FK
-        datetime data_inscricao
-        boolean presenca
-        string status
     }
 
     MINISTRANTE {
@@ -85,8 +84,8 @@ erDiagram
     USUARIO ||--o{ INSCRICAO_EVENTO : "faz"
     EVENTO ||--o{ INSCRICAO_EVENTO : "recebe"
     EVENTO ||--|{ ATIVIDADE : "contem"
-    INSCRICAO_EVENTO ||--o{ INSCRICAO_ATIVIDADE : "participa de"
-    ATIVIDADE ||--o{ INSCRICAO_ATIVIDADE : "tem inscritos"
+    PRESENCA_ATIVIDADE }o--|| INSCRICAO_EVENTO : "vinculada a"
+    ATIVIDADE ||--o{ PRESENCA_ATIVIDADE : "possui"
     USUARIO ||--o{ MINISTRANTE : "ministra"
     ATIVIDADE ||--|{ MINISTRANTE : "Ministrada por"
 ```
