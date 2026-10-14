@@ -7,7 +7,7 @@ BEGIN;
 
 CREATE TYPE papel_usuario AS ENUM ('administrador', 'associado');
 
-CREATE TYPE status_inscricao AS ENUM ('confirmada', 'pendente', 'recusada');
+CREATE TYPE status_inscricao AS ENUM ('confirmada', 'pendente', 'cancelada');
 
 
 
