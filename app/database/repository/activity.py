@@ -421,10 +421,9 @@ def get_lecturers(event_id: int, numero: int) -> list[Lecturer]:
         """
         SELECT m.id_usuario, m.id_evento, m.numero_atividade,
                m.mini_bio, m.instituicao, m.link_lattes,
-               u.id, u.nome, u.cpf::text, u.email, u.data_nascimento, u.papel,
-               v.idade::int
+               v.id, v.nome, v.cpf::text, v.email, v.data_nascimento,
+               v.papel, v.idade::int
         FROM ministra_atividade m
-        JOIN usuario u ON u.id = m.id_usuario
         JOIN usuario_com_idade v ON v.id = m.id_usuario
         WHERE m.id_evento = :id_evento AND m.numero_atividade = :numero
         """

@@ -282,13 +282,12 @@ def get_participants(event_id: int) -> list[User]:
     """
     query = text(
         """
-        SELECT u.id, u.nome, u.cpf::text, u.email, u.data_nascimento, u.papel,
-               v.idade::int
+        SELECT v.id, v.nome, v.cpf::text, v.email, v.data_nascimento,
+               v.papel, v.idade::int
         FROM inscricao_evento i
-        JOIN usuario u ON u.id = i.id_usuario
-        JOIN usuario_com_idade v ON v.id = u.id
+        JOIN usuario_com_idade v ON v.id = i.id_usuario
         WHERE i.id_evento = :event_id AND i.status = 'confirmada'
-        ORDER BY u.nome
+        ORDER BY v.nome
         """
     )
     with session_maker() as session:
