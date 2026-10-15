@@ -36,7 +36,11 @@ CREATE TABLE IF NOT EXISTS evento (
     -- criando uma restrição de valores com CHECK
     classificacao_indicativa INTEGER CHECK(classificacao_indicativa IN (null,10,12,14,16,18)),
     vagas INTEGER NOT NULL,
-    localizacao POINT -- utilizando o tipo de dados padrão do postgres
+    localizacao POINT, -- utilizando o tipo de dados padrão do postgres
+    -- URLs das imagens do evento: o banner em tamanho cheio (página de detalhes)
+    -- e uma versão reduzida para as listagens
+    banner TEXT,
+    banner_thumbnail TEXT
 );
 
 CREATE TABLE IF NOT EXISTS atividade (

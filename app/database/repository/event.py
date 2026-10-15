@@ -41,6 +41,10 @@ class Event:
     vagas: int
     latitude: float | None
     longitude: float | None
+    # URLs das imagens do evento (opcionais): banner em tamanho cheio e a
+    # versão reduzida usada nas listagens
+    banner: str | None = None
+    banner_thumbnail: str | None = None
     # Contagem de inscrições ativas (não canceladas); preenchida apenas pela
     # listagem de eventos, para a interface sinalizar eventos sem vagas.
     inscritas: int | None = None
@@ -150,6 +154,7 @@ class EventList:
             """
             SELECT id, nome, descricao, data_hora_inicio, data_hora_fim,
                    classificacao_indicativa, vagas, localizacao::text,
+                   banner, banner_thumbnail,
                    (SELECT COUNT(i.id_usuario)
                     FROM inscricao_evento i
                     WHERE i.id_evento = evento.id
@@ -171,7 +176,8 @@ def get_event(event_id: int) -> Event:
     query = text(
         """
         SELECT id, nome, descricao, data_hora_inicio, data_hora_fim,
-               classificacao_indicativa, vagas, localizacao::text
+               classificacao_indicativa, vagas, localizacao::text,
+               banner, banner_thumbnail
         FROM evento
         WHERE id = :event_id
         LIMIT 1
@@ -230,6 +236,8 @@ def create_event(
     latitude: float | None = None,
     longitude: float | None = None,
     activities: list[ActivityInput] | None = None,
+    banner: str | None = None,
+    banner_thumbnail: str | None = None,
 ) -> Event:
     """
     Cria um evento e suas atividades na mesma transação.
@@ -258,7 +266,7 @@ def create_event(
         """
         INSERT INTO evento
             (nome, descricao, data_hora_inicio, data_hora_fim,
-             classificacao_indicativa, vagas, localizacao)
+             classificacao_indicativa, vagas, localizacao, banner, banner_thumbnail)
         VALUES
             (:nome, :descricao, :data_hora_inicio, :data_hora_fim,
              :classificacao_indicativa, :vagas,
@@ -266,9 +274,11 @@ def create_event(
                  WHEN :latitude IS NOT NULL AND :longitude IS NOT NULL
                  THEN POINT(:longitude, :latitude)
                  ELSE NULL
-             END)
+             END,
+             :banner, :banner_thumbnail)
         RETURNING id, nome, descricao, data_hora_inicio, data_hora_fim,
-                  classificacao_indicativa, vagas, localizacao::text
+                  classificacao_indicativa, vagas, localizacao::text,
+                  banner, banner_thumbnail
         """
     )
     activity_query = text(
@@ -294,6 +304,8 @@ def create_event(
                     "vagas": vagas,
                     "latitude": latitude,
                     "longitude": longitude,
+                    "banner": banner,
+                    "banner_thumbnail": banner_thumbnail,
                 },
             )
         except IntegrityError as e:

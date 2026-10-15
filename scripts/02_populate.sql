@@ -42,24 +42,43 @@ SELECT setval(pg_get_serial_sequence('usuario', 'id'), (SELECT MAX(id) FROM usua
 -- Eventos
 -- =====================================================================
 -- localizacao é POINT(longitude, latitude)
+-- banner e banner_thumbnail usam o picsum.photos com uma seed por evento: a mesma
+-- seed devolve sempre a mesma imagem, em qualquer tamanho pedido
 
-INSERT INTO evento (id, nome, descricao, data_hora_inicio, data_hora_fim, classificacao_indicativa, vagas, localizacao) VALUES
+INSERT INTO evento (id, nome, descricao, data_hora_inicio, data_hora_fim, classificacao_indicativa, vagas, localizacao, banner, banner_thumbnail) VALUES
     (1, 'Semana Acadêmica de Computação 2026',
         'Uma semana de palestras, minicursos e mesas redondas sobre computação.',
-        '2026-05-11 08:00:00-03', '2026-05-15 18:00:00-03', NULL, 100, POINT(-38.5743, -3.7461)),
+        '2026-05-11 08:00:00-03', '2026-05-15 18:00:00-03', NULL, 100, POINT(-38.5743, -3.7461),
+        'https://picsum.photos/seed/evento-1/1200/400', 'https://picsum.photos/seed/evento-1/400/225'),
     (2, 'Workshop de Banco de Dados',
         'Workshop prático sobre modelagem e consultas SQL.',
-        '2026-08-20 13:00:00-03', '2026-08-20 18:00:00-03', 12, 30, POINT(-38.5743, -3.7461)),
+        '2026-08-20 13:00:00-03', '2026-08-20 18:00:00-03', 12, 30, POINT(-38.5743, -3.7461),
+        'https://picsum.photos/seed/evento-2/1200/400', 'https://picsum.photos/seed/evento-2/400/225'),
     (3, 'Hackathon Cidades Inteligentes',
         'Maratona de 36 horas para desenvolver soluções para problemas urbanos.',
-        '2026-11-07 09:00:00-03', '2026-11-08 18:00:00-03', 16, 40, POINT(-38.5267, -3.7319)),
+        '2026-11-07 09:00:00-03', '2026-11-08 18:00:00-03', 16, 40, POINT(-38.5267, -3.7319),
+        'https://picsum.photos/seed/evento-3/1200/400', 'https://picsum.photos/seed/evento-3/400/225'),
     (4, 'Encontro de Segurança da Informação',
         'Palestras e um CTF introdutório sobre segurança ofensiva e defensiva.',
-        '2026-12-03 08:00:00-03', '2026-12-04 17:00:00-03', 18, 50, NULL),
+        '2026-12-03 08:00:00-03', '2026-12-04 17:00:00-03', 18, 50, NULL,
+        'https://picsum.photos/seed/evento-4/1200/400', 'https://picsum.photos/seed/evento-4/400/225'),
     -- evento lotado: 3 vagas e 3 inscrições ativas (confirmadas + pendentes)
     (5, 'Oficina de Robótica para Iniciantes',
         'Oficina introdutória de robótica com kits Arduino.',
-        '2026-10-25 08:00:00-03', '2026-10-25 12:00:00-03', 10, 3, POINT(-38.5431, -3.7172));
+        '2026-10-25 08:00:00-03', '2026-10-25 12:00:00-03', 10, 3, POINT(-38.5431, -3.7172),
+        'https://picsum.photos/seed/evento-5/1200/400', 'https://picsum.photos/seed/evento-5/400/225'),
+    (6, 'Feira de Profissões em Tecnologia',
+        'Estandes de empresas e conversas com profissionais da área.',
+        '2027-01-20 09:00:00-03', '2027-01-20 17:00:00-03', NULL, 200, POINT(-38.5267, -3.7319),
+        'https://picsum.photos/seed/evento-6/1200/400', 'https://picsum.photos/seed/evento-6/400/225'),
+    (7, 'Bootcamp de Desenvolvimento Web',
+        'Três dias de imersão em HTML, CSS, JavaScript e APIs REST.',
+        '2027-02-08 08:00:00-03', '2027-02-10 18:00:00-03', 14, 35, POINT(-38.5743, -3.7461),
+        'https://picsum.photos/seed/evento-7/1200/400', 'https://picsum.photos/seed/evento-7/400/225'),
+    (8, 'Simpósio de Ciência de Dados',
+        'Palestras sobre aprendizado de máquina, visualização e ética em dados.',
+        '2027-03-15 08:30:00-03', '2027-03-16 17:30:00-03', NULL, 120, NULL,
+        'https://picsum.photos/seed/evento-8/1200/400', 'https://picsum.photos/seed/evento-8/400/225');
 
 -- ids foram inseridos explicitamente, então a sequência precisa ser ajustada
 SELECT setval(pg_get_serial_sequence('evento', 'id'), (SELECT MAX(id) FROM evento));
@@ -86,7 +105,14 @@ INSERT INTO atividade (numero, id_evento, nome, descricao, sala, vagas, data_hor
     (10, 4, 'Palestra: Engenharia social', NULL, 'Auditório', 50, '2026-12-03 09:00:00-03', '2026-12-03 11:00:00-03'),
     (11, 4, 'CTF introdutório', 'Competição capture the flag para iniciantes.', 'Laboratório 1', 25, '2026-12-04 08:00:00-03', '2026-12-04 17:00:00-03'),
     -- Evento 5
-    (12, 5, 'Montando seu primeiro robô', NULL, 'Laboratório de Robótica', 3, '2026-10-25 08:00:00-03', '2026-10-25 12:00:00-03');
+    (12, 5, 'Montando seu primeiro robô', NULL, 'Laboratório de Robótica', 3, '2026-10-25 08:00:00-03', '2026-10-25 12:00:00-03'),
+    -- Evento 6
+    (13, 6, 'Painel: primeiros passos na carreira', NULL, 'Auditório', 200, '2027-01-20 10:00:00-03', '2027-01-20 12:00:00-03'),
+    -- Evento 7
+    (14, 7, 'Fundamentos de HTML e CSS', NULL, 'Laboratório 1', 35, '2027-02-08 08:00:00-03', '2027-02-08 18:00:00-03'),
+    (15, 7, 'Construindo uma API REST', 'Do zero ao deploy de uma API simples.', 'Laboratório 1', 35, '2027-02-10 08:00:00-03', '2027-02-10 18:00:00-03'),
+    -- Evento 8
+    (16, 8, 'Abertura: ética em dados', NULL, 'Auditório', 120, '2027-03-15 08:30:00-03', '2027-03-15 10:00:00-03');
 
 -- =====================================================================
 -- Ministrantes
@@ -106,7 +132,11 @@ INSERT INTO ministra_atividade (id_usuario, id_evento, numero_atividade, mini_bi
     ( 2, 3, 9,  NULL, 'Universidade Federal do Ceará', NULL),
     (14, 4, 10, 'Analista de segurança da informação.', 'Empresa Segura S.A.', NULL),
     (14, 4, 11, 'Analista de segurança da informação.', 'Empresa Segura S.A.', NULL),
-    ( 8, 5, 12, 'Professor e entusiasta de robótica.', 'Instituto Federal do Ceará', 'http://lattes.cnpq.br/0000000000000008');
+    ( 8, 5, 12, 'Professor e entusiasta de robótica.', 'Instituto Federal do Ceará', 'http://lattes.cnpq.br/0000000000000008'),
+    ( 8, 6, 13, 'Professor e consultor de carreira em TI.', 'Instituto Federal do Ceará', 'http://lattes.cnpq.br/0000000000000008'),
+    (12, 7, 14, 'Desenvolvedor backend há 10 anos.', 'Empresa Exemplo LTDA', NULL),
+    (12, 7, 15, 'Desenvolvedor backend há 10 anos.', 'Empresa Exemplo LTDA', NULL),
+    ( 9, 8, 16, 'Professora de Ciência da Computação, pesquisa IA aplicada à educação.', 'Universidade Federal do Ceará', 'http://lattes.cnpq.br/0000000000000009');
 
 -- =====================================================================
 -- Inscrições
