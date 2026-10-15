@@ -61,7 +61,7 @@ def login_page(request: Request):
                     fetch('/api/login', {{
                         method: 'POST',
                         headers: {{'Content-Type': 'application/json'}},
-                        body: {corpo},
+                        body: JSON.stringify({corpo}),
                     }}).then((r) => r.ok)
                     """,
                     timeout=10,
