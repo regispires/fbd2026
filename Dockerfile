@@ -21,4 +21,4 @@ COPY . .
 EXPOSE 8000
 
 # Run the application on the production server.
-CMD ["uv", "run", "app/main.py"]
+CMD ["uv", "run", "-m", "app.main"]
