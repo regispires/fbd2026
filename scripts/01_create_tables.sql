@@ -23,11 +23,8 @@ CREATE TABLE IF NOT EXISTS usuario (
     -- por isso ela é adicionada em uma view
 );
 
--- Fazendo drop porque colunas não podem ser renomeadas com CREATE OR REPLACE
-DROP VIEW IF EXISTS usuario_com_idade;
-CREATE VIEW usuario_com_idade AS (
-    SELECT id, nome, cpf, email, data_nascimento, EXTRACT(YEARS FROM AGE(data_nascimento)) AS idade, papel
-    FROM usuario
+CREATE OR REPLACE VIEW usuario_com_idade AS (
+    SELECT id, nome, cpf, email, EXTRACT(YEARS FROM AGE(data_nascimento)) as idade FROM usuario
 );
 
 CREATE TABLE IF NOT EXISTS evento (
@@ -95,17 +92,5 @@ CREATE TABLE IF NOT EXISTS ministra_atividade (
     FOREIGN KEY (numero_atividade,id_evento) REFERENCES atividade(numero,id_evento),
     FOREIGN KEY (id_usuario) REFERENCES usuario(id)
 );
-
--- Sessões ativas de login (autenticação por cookie).
--- O cookie enviado ao navegador carrega um token opaco gerado em memória; o banco
--- guarda apenas o hash SHA-256 desse token, de modo que um vazamento do banco
--- não permite assumir as sessões ativas
-CREATE TABLE IF NOT EXISTS sessao (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    token_hash TEXT UNIQUE NOT NULL,
-    id_usuario UUID REFERENCES usuario(id) ON DELETE CASCADE NOT NULL,
-    criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    expira_em TIMESTAMPTZ NOT NULL
-);
-
+   
 COMMIT;
