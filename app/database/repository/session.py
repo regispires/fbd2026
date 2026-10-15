@@ -10,14 +10,13 @@ de leitura.
 import hashlib
 import secrets
 from datetime import UTC, datetime
-from uuid import UUID
 
 from sqlalchemy import text
 
 from app.database import session_maker
 
 
-def create_session(user_id: UUID, expires_at: datetime) -> str:
+def create_session(user_id: int, expires_at: datetime) -> str:
     """
     Cria uma sessão para o usuário e retorna o token opaco a ser enviado ao
     navegador como cookie.
@@ -67,7 +66,7 @@ def delete_session_by_hash(token_hash: str) -> None:
         session.commit()
 
 
-def get_user_id_by_session(token_hash: str) -> UUID | None:
+def get_user_id_by_session(token_hash: str) -> int | None:
     """
     Retorna o ``id_usuario`` da sessão apontada pelo hash do token, ou
     ``None`` se a sessão não existir/estiver expirada. Sessões expiradas são

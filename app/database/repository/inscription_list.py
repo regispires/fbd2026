@@ -4,7 +4,6 @@ Operações sobre inscrições em eventos e presenças em atividades.
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -73,7 +72,7 @@ class InscriptionList:
 
 
 def register_user_for_event(
-    user_id: UUID,
+    user_id: int,
     event_id: int,
     valor: float,
     comprovante_usuario: bytes | None,
@@ -144,7 +143,7 @@ def register_user_for_event(
 
 
 def add_attendance(
-    user_id: UUID, event_id: int, numero_atividade: int
+    user_id: int, event_id: int, numero_atividade: int
 ) -> ActivityAttendance:
     """
     Registra a presença de um participante em uma atividade (regra de
@@ -215,7 +214,7 @@ def add_attendance(
     )
 
 
-def remove_attendance(user_id: UUID, event_id: int, numero_atividade: int) -> None:
+def remove_attendance(user_id: int, event_id: int, numero_atividade: int) -> None:
     """
     Remove a presença de um participante da atividade (desfaz um registro
     de presença). Levanta ``AttendanceNotFound`` se não houver presença a
@@ -309,7 +308,7 @@ def get_participants(event_id: int) -> list[User]:
 # --- Helpers internos -------------------------------------------------------
 
 
-def _fetch_event_inscription(user_id: UUID, event_id: int) -> dict | None:
+def _fetch_event_inscription(user_id: int, event_id: int) -> dict | None:
     query = text(
         """
         SELECT id_usuario, id_evento, data_inscricao, status, valor,

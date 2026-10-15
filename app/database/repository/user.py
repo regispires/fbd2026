@@ -6,7 +6,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from typing import Literal
-from uuid import UUID
 
 from pwdlib import PasswordHash
 from pwdlib.exceptions import UnknownHashError
@@ -38,7 +37,7 @@ class User:
     Representa a tabela `usuario`
     """
 
-    id: UUID
+    id: int
     nome: str
     cpf: str
     email: str
@@ -144,7 +143,7 @@ class User:
             ORDER BY p.id_evento, p.numero_atividade
             """
         )
-        params: dict[str, int | UUID] = {"id_usuario": self.id}
+        params: dict[str, int] = {"id_usuario": self.id}
         if event_id is not None:
             params["event_id"] = event_id
 
@@ -186,7 +185,7 @@ class UserList:
         self.on_change()
 
 
-def get_user(user_id: UUID) -> User:
+def get_user(user_id: int) -> User:
     """Busca um usuário por id; lança ``UserNotFound`` se não existir."""
     query = text(
         """

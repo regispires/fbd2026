@@ -5,7 +5,6 @@ Operações sobre atividades e os ministrantes.
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -58,7 +57,7 @@ def _ensure_inside_event(
 class Lecturer:
     """Linha da ``ministra_atividade`` com os dados do usuário para exibição."""
 
-    id_usuario: UUID
+    id_usuario: int
     id_evento: int
     numero_atividade: int
     mini_bio: str | None
@@ -193,7 +192,7 @@ class Activity(ActivityPreview):
                 )
             session.commit()
 
-    def remove_lecturer(self, user_id: UUID) -> bool:
+    def remove_lecturer(self, user_id: int) -> bool:
         """Remove um ministrante; retorna ``True`` se uma linha foi removida."""
         check_query = text(
             """
@@ -247,7 +246,7 @@ class Activity(ActivityPreview):
 
     def update_lecturer(
         self,
-        user_id: UUID,
+        user_id: int,
         mini_bio: str | None,
         instituicao: str,
         link_lattes: str | None,

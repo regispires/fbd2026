@@ -11,7 +11,6 @@ seus getters de inscrições).
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
-from uuid import UUID
 
 from sqlalchemy import text
 
@@ -33,7 +32,7 @@ class EventInscription:
     apenas as colunas que o contexto da interface precisa.
     """
 
-    user_id: UUID
+    user_id: int
     event_id: int
     data_inscricao: datetime
     status: str
@@ -151,7 +150,7 @@ class ActivityAttendance:
     atividade; não possui status nem histórico — a linha existe ou não.
     """
 
-    user_id: UUID
+    user_id: int
     event_id: int
     numero_atividade: int
     event_nome: str | None = None

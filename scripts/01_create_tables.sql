@@ -12,7 +12,7 @@ CREATE TYPE status_inscricao AS ENUM ('confirmada', 'pendente', 'cancelada');
 
 
 CREATE TABLE IF NOT EXISTS usuario (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id SERIAL PRIMARY KEY,
     nome TEXT NOT NULL,
     cpf CHAR(11) UNIQUE NOT NULL,
     email TEXT UNIQUE NOT NULL,
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS atividade (
 );
 
 CREATE TABLE IF NOT EXISTS inscricao_evento (
-    id_usuario UUID REFERENCES usuario(id) NOT NULL,
+    id_usuario INTEGER REFERENCES usuario(id) NOT NULL,
     id_evento INTEGER REFERENCES evento(id) NOT NULL,
     data_inscricao TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     status STATUS_INSCRICAO NOT NULL DEFAULT 'pendente',
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS inscricao_evento (
 );
 
 CREATE TABLE IF NOT EXISTS presenca_atividade(
-    id_usuario UUID NOT NULL,
+    id_usuario INTEGER NOT NULL,
     id_evento INTEGER NOT NULL,
     numero_atividade INTEGER NOT NULL,
 
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS presenca_atividade(
 );
 
 CREATE TABLE IF NOT EXISTS ministra_atividade (
-    id_usuario UUID NOT NULL,
+    id_usuario INTEGER NOT NULL,
     id_evento INTEGER NOT NULL,
     numero_atividade INTEGER NOT NULL,
 
