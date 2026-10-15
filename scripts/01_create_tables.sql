@@ -92,5 +92,17 @@ CREATE TABLE IF NOT EXISTS ministra_atividade (
     FOREIGN KEY (numero_atividade,id_evento) REFERENCES atividade(numero,id_evento),
     FOREIGN KEY (id_usuario) REFERENCES usuario(id)
 );
-   
+
+CREATE TABLE IF NOT EXISTS sessao (
+    -- apenas o hash SHA-256 (hex) do token é armazenado, nunca o token em si
+    token_hash CHAR(64) PRIMARY KEY,
+    -- sessões não fazem sentido sem o usuário, então são removidas junto com ele
+    id_usuario INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+    expira_em TIMESTAMPTZ NOT NULL
+);
+
+-- a criação de sessão remove as sessões expiradas do usuário, então o filtro
+-- por id_usuario precisa de um índice (a PK só indexa token_hash)
+CREATE INDEX IF NOT EXISTS idx_sessao_id_usuario ON sessao (id_usuario);
+
 COMMIT;
