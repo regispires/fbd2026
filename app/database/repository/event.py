@@ -172,12 +172,21 @@ class EventList:
 
 
 def get_event(event_id: int) -> Event:
-    """Busca um evento por id; lança ``EventNotFound`` se não existir."""
+    """
+    Busca um evento por id; lança ``EventNotFound`` se não existir.
+
+    Também preenche ``inscritas`` (inscrições não canceladas), usado pela
+    página de detalhes para mostrar as vagas disponíveis.
+    """
     query = text(
         """
         SELECT id, nome, descricao, data_hora_inicio, data_hora_fim,
                classificacao_indicativa, vagas, localizacao::text,
-               banner, banner_thumbnail
+               banner, banner_thumbnail,
+               (SELECT COUNT(i.id_usuario)
+                FROM inscricao_evento i
+                WHERE i.id_evento = evento.id
+                  AND i.status <> 'cancelada') AS inscritas
         FROM evento
         WHERE id = :event_id
         LIMIT 1
