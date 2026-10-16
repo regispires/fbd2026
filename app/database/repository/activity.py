@@ -11,13 +11,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import session_maker
-from app.database.repository import ensure_utc
+from app.database.repository import ensure_timezone
 from app.database.repository.user import User
 from app.exceptions import (
     ActivityHasDependencies,
     ActivityNotFound,
     ActivityWithoutLecturer,
-    DuplicateActivityRegistration,
     EventNotFound,
     InvalidActivitySchedule,
 )
@@ -46,9 +45,11 @@ def _ensure_inside_event(
     row = session.execute(query, {"id_evento": event_id}).mappings().first()
     if row is None:
         raise EventNotFound
+    # o banco devolve datetimes com timezone; a entrada é normalizada para
+    # que a comparação não misture datetimes com e sem timezone
     if (
-        data_hora_inicio < row["data_hora_inicio"]
-        or data_hora_fim > row["data_hora_fim"]
+        ensure_timezone(data_hora_inicio) < row["data_hora_inicio"]
+        or ensure_timezone(data_hora_fim) > row["data_hora_fim"]
     ):
         raise InvalidActivitySchedule
 
@@ -59,7 +60,7 @@ class Lecturer:
 
     id_usuario: int
     id_evento: int
-    numero_atividade: int
+    id_atividade: int
     mini_bio: str | None
     instituicao: str
     link_lattes: str | None
@@ -86,11 +87,11 @@ class ActivityInput:
     """
     Entrada para criação de atividades junto com o evento (``create_event``).
 
-    Espelha as colunas de ``atividade`` sem as chaves compostas; a validação
-    de que o horário está contido no do evento é feita no ``create_event``.
+    Espelha as colunas de ``atividade`` sem as chaves (``id`` é gerado pelo
+    banco e ``id_evento`` é o do evento criado); a validação de que o horário
+    está contido no do evento é feita no ``create_event``.
     """
 
-    numero: int
     nome: str
     descricao: str | None
     sala: str
@@ -104,7 +105,7 @@ class ActivityPreview:
     """Campos resumidos da atividade, para exibição em listas."""
 
     id_evento: int
-    numero: int
+    id: int
     nome: str
     sala: str
     data_hora_inicio: datetime
@@ -137,7 +138,7 @@ class Activity(ActivityPreview):
             UPDATE atividade
             SET nome = :nome, descricao = :descricao, sala = :sala, vagas = :vagas,
                 data_hora_inicio = :data_hora_inicio, data_hora_fim = :data_hora_fim
-            WHERE numero = :numero AND id_evento = :id_evento
+            WHERE id = :id AND id_evento = :id_evento
             """
         )
         with session_maker() as session:
@@ -146,14 +147,14 @@ class Activity(ActivityPreview):
             _ = session.execute(
                 query,
                 {
-                    "numero": self.numero,
+                    "id": self.id,
                     "id_evento": self.id_evento,
                     "nome": nome,
                     "descricao": descricao,
                     "sala": sala,
                     "vagas": vagas,
-                    "data_hora_inicio": ensure_utc(data_hora_inicio),
-                    "data_hora_fim": ensure_utc(data_hora_fim),
+                    "data_hora_inicio": ensure_timezone(data_hora_inicio),
+                    "data_hora_fim": ensure_timezone(data_hora_fim),
                 },
             )
             session.commit()
@@ -171,9 +172,9 @@ class Activity(ActivityPreview):
         query = text(
             """
             INSERT INTO ministra_atividade
-                (id_usuario, id_evento, numero_atividade, mini_bio, instituicao, link_lattes)
+                (id_usuario, id_evento, id_atividade, mini_bio, instituicao, link_lattes)
             VALUES
-                (:id_usuario, :id_evento, :numero_atividade, :mini_bio, :instituicao, :link_lattes)
+                (:id_usuario, :id_evento, :id_atividade, :mini_bio, :instituicao, :link_lattes)
             """
         )
         with session_maker() as session:
@@ -184,7 +185,7 @@ class Activity(ActivityPreview):
                     {
                         "id_usuario": entry.user.id,
                         "id_evento": self.id_evento,
-                        "numero_atividade": self.numero,
+                        "id_atividade": self.id,
                         "mini_bio": entry.mini_bio,
                         "instituicao": entry.instituicao,
                         "link_lattes": entry.link_lattes,
@@ -199,7 +200,7 @@ class Activity(ActivityPreview):
             SELECT id_usuario
             FROM ministra_atividade
             WHERE id_evento = :id_evento
-              AND numero_atividade = :numero_atividade
+              AND id_atividade = :id_atividade
               AND id_usuario <> :removing
             LIMIT 1
             """
@@ -211,7 +212,7 @@ class Activity(ActivityPreview):
                     check_query,
                     {
                         "id_evento": self.id_evento,
-                        "numero_atividade": self.numero,
+                        "id_atividade": self.id,
                         "removing": user_id,
                     },
                 )
@@ -226,7 +227,7 @@ class Activity(ActivityPreview):
             DELETE FROM ministra_atividade
             WHERE id_usuario = :id_usuario
               AND id_evento = :id_evento
-              AND numero_atividade = :numero_atividade
+              AND id_atividade = :id_atividade
             RETURNING id_usuario
             """
         )
@@ -238,7 +239,7 @@ class Activity(ActivityPreview):
                 {
                     "id_usuario": user_id,
                     "id_evento": self.id_evento,
-                    "numero_atividade": self.numero,
+                    "id_atividade": self.id,
                 },
             )
             session.commit()
@@ -257,7 +258,7 @@ class Activity(ActivityPreview):
             SET mini_bio = :mini_bio, instituicao = :instituicao, link_lattes = :link_lattes
             WHERE id_usuario = :id_usuario
               AND id_evento = :id_evento
-              AND numero_atividade = :numero_atividade
+              AND id_atividade = :id_atividade
             """
         )
         with session_maker() as session:
@@ -267,7 +268,7 @@ class Activity(ActivityPreview):
                 {
                     "id_usuario": user_id,
                     "id_evento": self.id_evento,
-                    "numero_atividade": self.numero,
+                    "id_atividade": self.id,
                     "mini_bio": mini_bio,
                     "instituicao": instituicao,
                     "link_lattes": link_lattes,
@@ -299,11 +300,11 @@ class ActivityList:
             return
         query = text(
             """
-            SELECT a.id_evento, a.numero, a.nome, a.sala,
+            SELECT a.id_evento, a.id, a.nome, a.sala,
                    a.data_hora_inicio, a.data_hora_fim
             FROM atividade a
             WHERE a.id_evento = :id_evento
-            ORDER BY a.numero
+            ORDER BY a.id
             """
         )
         with session_maker() as session:
@@ -315,13 +316,12 @@ class ActivityList:
             ]
         self.on_change()
 
-    def get_activity_details(self, number: int, event_id: int) -> Activity:
-        return get_activity(number, event_id)
+    def get_activity_details(self, activity_id: int, event_id: int) -> Activity:
+        return get_activity(activity_id, event_id)
 
     def add(
         self,
         event_id: int,
-        numero: int,
         nome: str,
         descricao: str | None,
         sala: str,
@@ -330,51 +330,47 @@ class ActivityList:
         data_hora_fim: datetime,
     ) -> Activity:
         """
-        Cria a atividade, validando o intervalo do evento e o número único
-        na mesma transação da escrita.
+        Cria a atividade (o ``id`` é gerado pelo banco), validando o
+        intervalo do evento na mesma transação da escrita.
         """
         query = text(
             """
             INSERT INTO atividade
-                (numero, id_evento, nome, descricao, sala, vagas, data_hora_inicio, data_hora_fim)
+                (id_evento, nome, descricao, sala, vagas, data_hora_inicio, data_hora_fim)
             VALUES
-                (:numero, :id_evento, :nome, :descricao, :sala, :vagas,
+                (:id_evento, :nome, :descricao, :sala, :vagas,
                  :data_hora_inicio, :data_hora_fim)
-            RETURNING id_evento, numero, nome, sala, data_hora_inicio, data_hora_fim,
+            RETURNING id_evento, id, nome, sala, data_hora_inicio, data_hora_fim,
                      descricao, vagas
             """
         )
         with session_maker() as session:
             session.begin()
             _ensure_inside_event(session, event_id, data_hora_inicio, data_hora_fim)
-            try:
-                result = session.execute(
-                    query,
-                    {
-                        "numero": numero,
-                        "id_evento": event_id,
-                        "nome": nome,
-                        "descricao": descricao,
-                        "sala": sala,
-                        "vagas": vagas,
-                        "data_hora_inicio": ensure_utc(data_hora_inicio),
-                        "data_hora_fim": ensure_utc(data_hora_fim),
-                    },
-                )
-            except IntegrityError as e:
-                raise DuplicateActivityRegistration from e
+            result = session.execute(
+                query,
+                {
+                    "id_evento": event_id,
+                    "nome": nome,
+                    "descricao": descricao,
+                    "sala": sala,
+                    "vagas": vagas,
+                    "data_hora_inicio": ensure_timezone(data_hora_inicio),
+                    "data_hora_fim": ensure_timezone(data_hora_fim),
+                },
+            )
             session.commit()
             row = result.mappings().first()
         self.on_change()
         return Activity(lecturers=[], **dict(row))
 
-    def delete_activity(self, numero: int) -> bool:
-        """Exclui a atividade pelo número; retorna ``True`` se algo foi removido."""
-        query = text("DELETE FROM atividade WHERE numero = :numero RETURNING numero")
+    def delete_activity(self, activity_id: int) -> bool:
+        """Exclui a atividade pelo id; retorna ``True`` se algo foi removido."""
+        query = text("DELETE FROM atividade WHERE id = :id RETURNING id")
         with session_maker() as session:
             session.begin()
             try:
-                result = session.execute(query, {"numero": numero})
+                result = session.execute(query, {"id": activity_id})
             except IntegrityError as e:
                 raise ActivityHasDependencies from e
             session.commit()
@@ -384,24 +380,24 @@ class ActivityList:
         return deleted
 
 
-def get_activity(numero: int, event_id: int | None = None) -> Activity:
+def get_activity(activity_id: int, event_id: int | None = None) -> Activity:
     """
     Busca os detalhes de uma atividade.
 
-    ``numero`` é único no banco; ``event_id`` é opcional e, quando dado,
+    ``activity_id`` é único no banco; ``event_id`` é opcional e, quando dado,
     restringe a busca a um evento específico.
     """
     event_clause = "AND a.id_evento = :id_evento" if event_id is not None else ""
     query = text(
         f"""
-        SELECT a.id_evento, a.numero, a.nome, a.sala,
+        SELECT a.id_evento, a.id, a.nome, a.sala,
                a.data_hora_inicio, a.data_hora_fim, a.descricao, a.vagas
         FROM atividade a
-        WHERE a.numero = :numero {event_clause}
+        WHERE a.id = :id {event_clause}
         LIMIT 1
         """
     )
-    params: dict[str, int] = {"numero": numero}
+    params: dict[str, int] = {"id": activity_id}
     if event_id is not None:
         params["id_evento"] = event_id
     with session_maker() as session:
@@ -410,44 +406,87 @@ def get_activity(numero: int, event_id: int | None = None) -> Activity:
         raise ActivityNotFound
     base = dict(row)
     detail = Activity(lecturers=[], **base)
-    detail.lecturers = get_lecturers(event_id or base["id_evento"], numero)
+    detail.lecturers = get_lecturers(event_id or base["id_evento"], activity_id)
     return detail
 
 
-def get_lecturers(event_id: int, numero: int) -> list[Lecturer]:
+def get_lecturers(event_id: int, activity_id: int) -> list[Lecturer]:
     """Ministrantes de uma atividade, com dados do usuário para exibição."""
     query = text(
         """
-        SELECT m.id_usuario, m.id_evento, m.numero_atividade,
+        SELECT m.id_usuario, m.id_evento, m.id_atividade,
                m.mini_bio, m.instituicao, m.link_lattes,
                v.id, v.nome, v.cpf::text, v.email, v.data_nascimento,
                v.papel, v.idade::int
         FROM ministra_atividade m
         JOIN usuario_com_idade v ON v.id = m.id_usuario
-        WHERE m.id_evento = :id_evento AND m.numero_atividade = :numero
+        WHERE m.id_evento = :id_evento AND m.id_atividade = :id_atividade
         """
     )
     with session_maker() as session:
         rows = session.execute(
-            query, {"id_evento": event_id, "numero": numero}
+            query, {"id_evento": event_id, "id_atividade": activity_id}
         ).mappings()
-    return [
-        Lecturer(
-            id_usuario=r["id_usuario"],
-            id_evento=r["id_evento"],
-            numero_atividade=r["numero_atividade"],
-            mini_bio=r["mini_bio"],
-            instituicao=r["instituicao"],
-            link_lattes=r["link_lattes"],
-            user=User(
-                id=r["id"],
-                nome=r["nome"],
-                cpf=r["cpf"],
-                email=r["email"],
-                data_nascimento=r["data_nascimento"],
-                papel=r["papel"],
-                idade=r["idade"],
-            ),
-        )
-        for r in rows
-    ]
+        return [_row_to_lecturer(r) for r in rows]
+
+
+def _row_to_lecturer(r) -> Lecturer:
+    """Constrói um ``Lecturer`` de uma linha de ``ministra_atividade`` + usuário."""
+    return Lecturer(
+        id_usuario=r["id_usuario"],
+        id_evento=r["id_evento"],
+        id_atividade=r["id_atividade"],
+        mini_bio=r["mini_bio"],
+        instituicao=r["instituicao"],
+        link_lattes=r["link_lattes"],
+        user=User(
+            id=r["id"],
+            nome=r["nome"],
+            cpf=r["cpf"],
+            email=r["email"],
+            data_nascimento=r["data_nascimento"],
+            papel=r["papel"],
+            idade=r["idade"],
+        ),
+    )
+
+
+def get_event_activities(event_id: int) -> list[Activity]:
+    """
+    Todas as atividades de um evento, com descrição, vagas e ministrantes,
+    ordenadas pelo horário de início.
+
+    Usa duas consultas (atividades e ministrantes do evento inteiro) em vez
+    de uma por atividade.
+    """
+    activities_query = text(
+        """
+        SELECT a.id_evento, a.id, a.nome, a.sala,
+               a.data_hora_inicio, a.data_hora_fim, a.descricao, a.vagas
+        FROM atividade a
+        WHERE a.id_evento = :id_evento
+        ORDER BY a.data_hora_inicio, a.id
+        """
+    )
+    lecturers_query = text(
+        """
+        SELECT m.id_usuario, m.id_evento, m.id_atividade,
+               m.mini_bio, m.instituicao, m.link_lattes,
+               v.id, v.nome, v.cpf::text, v.email, v.data_nascimento,
+               v.papel, v.idade::int
+        FROM ministra_atividade m
+        JOIN usuario_com_idade v ON v.id = m.id_usuario
+        WHERE m.id_evento = :id_evento
+        ORDER BY v.nome
+        """
+    )
+    params = {"id_evento": event_id}
+    with session_maker() as session:
+        activities = [
+            Activity(lecturers=[], **dict(row))
+            for row in session.execute(activities_query, params).mappings()
+        ]
+        by_id = {a.id: a for a in activities}
+        for row in session.execute(lecturers_query, params).mappings():
+            by_id[row["id_atividade"]].lecturers.append(_row_to_lecturer(row))
+    return activities

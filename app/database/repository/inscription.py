@@ -152,7 +152,7 @@ class ActivityAttendance:
 
     user_id: int
     event_id: int
-    numero_atividade: int
+    id_atividade: int
     event_nome: str | None = None
     activity_nome: str | None = None
     sala: str | None = None

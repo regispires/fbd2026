@@ -86,9 +86,9 @@ SELECT setval(pg_get_serial_sequence('evento', 'id'), (SELECT MAX(id) FROM event
 -- =====================================================================
 -- Atividades
 -- =====================================================================
--- numero é UNIQUE na tabela inteira, então a numeração é global
+-- ids inseridos explicitamente para facilitar a referência nas demais tabelas
 
-INSERT INTO atividade (numero, id_evento, nome, descricao, sala, vagas, data_hora_inicio, data_hora_fim) VALUES
+INSERT INTO atividade (id, id_evento, nome, descricao, sala, vagas, data_hora_inicio, data_hora_fim) VALUES
     -- Evento 1
     (1,  1, 'Abertura: IA na educação', 'Palestra de abertura sobre o uso de IA em sala de aula.', 'Auditório', 100, '2026-05-11 08:00:00-03', '2026-05-11 10:00:00-03'),
     (2,  1, 'Minicurso de Python', 'Introdução à linguagem Python.', 'Laboratório 1', 30, '2026-05-12 14:00:00-03', '2026-05-12 18:00:00-03'),
@@ -114,11 +114,14 @@ INSERT INTO atividade (numero, id_evento, nome, descricao, sala, vagas, data_hor
     -- Evento 8
     (16, 8, 'Abertura: ética em dados', NULL, 'Auditório', 120, '2027-03-15 08:30:00-03', '2027-03-15 10:00:00-03');
 
+-- ids foram inseridos explicitamente, então a sequência precisa ser ajustada
+SELECT setval(pg_get_serial_sequence('atividade', 'id'), (SELECT MAX(id) FROM atividade));
+
 -- =====================================================================
 -- Ministrantes
 -- =====================================================================
 
-INSERT INTO ministra_atividade (id_usuario, id_evento, numero_atividade, mini_bio, instituicao, link_lattes) VALUES
+INSERT INTO ministra_atividade (id_usuario, id_evento, id_atividade, mini_bio, instituicao, link_lattes) VALUES
     ( 9, 1, 1,  'Professora de Ciência da Computação, pesquisa IA aplicada à educação.', 'Universidade Federal do Ceará', 'http://lattes.cnpq.br/0000000000000009'),
     (12, 1, 2,  'Desenvolvedor backend há 10 anos.', 'Empresa Exemplo LTDA', NULL),
     ( 5, 1, 3,  'Mestranda em Engenharia de Software.', 'Universidade Federal do Ceará', 'http://lattes.cnpq.br/0000000000000005'),
@@ -190,7 +193,7 @@ INSERT INTO inscricao_evento (id_usuario, id_evento, data_inscricao, status, com
 -- =====================================================================
 -- apenas eventos já realizados (1 e 2) e apenas inscrições confirmadas
 
-INSERT INTO presenca_atividade (id_usuario, id_evento, numero_atividade) VALUES
+INSERT INTO presenca_atividade (id_usuario, id_evento, id_atividade) VALUES
     -- Evento 1
     ( 3, 1, 1),
     ( 3, 1, 2),

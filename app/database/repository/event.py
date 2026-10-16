@@ -10,10 +10,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.database import session_maker
-from app.database.repository import ensure_utc, parse_point
+from app.database.repository import ensure_timezone, parse_point
 from app.database.repository.activity import ActivityInput
 from app.exceptions import (
-    DuplicateActivityRegistration,
     DuplicateEventRegistration,
     EventHasDependencies,
     EventNotFound,
@@ -97,8 +96,8 @@ class Event:
                         "id": self.id,
                         "nome": nome,
                         "descricao": descricao,
-                        "data_hora_inicio": ensure_utc(data_hora_inicio),
-                        "data_hora_fim": ensure_utc(data_hora_fim),
+                        "data_hora_inicio": ensure_timezone(data_hora_inicio),
+                        "data_hora_fim": ensure_timezone(data_hora_fim),
                         "classificacao_indicativa": classificacao_indicativa,
                         "vagas": vagas,
                         "latitude": latitude,
@@ -257,17 +256,16 @@ def create_event(
     (``InvalidActivitySchedule``).
 
     ``nome`` é único no banco (violação vira ``DuplicateEventRegistration``);
-    um ``numero`` de atividade já em uso vira
-    ``DuplicateActivityRegistration``. A localização é opcional, mas o par
-    lat/lng deve vir inteiro ou não vir.
+    os ids das atividades são gerados pelo banco. A localização é opcional,
+    mas o par lat/lng deve vir inteiro ou não vir.
     """
     _require_lat_lng_pair(latitude, longitude)
     if not activities:
         raise EventWithoutActivity
     for activity in activities:
         if (
-            activity.data_hora_inicio < data_hora_inicio
-            or activity.data_hora_fim > data_hora_fim
+            ensure_timezone(activity.data_hora_inicio) < ensure_timezone(data_hora_inicio)
+            or ensure_timezone(activity.data_hora_fim) > ensure_timezone(data_hora_fim)
         ):
             raise InvalidActivitySchedule
 
@@ -293,9 +291,9 @@ def create_event(
     activity_query = text(
         """
         INSERT INTO atividade
-            (numero, id_evento, nome, descricao, sala, vagas, data_hora_inicio, data_hora_fim)
+            (id_evento, nome, descricao, sala, vagas, data_hora_inicio, data_hora_fim)
         VALUES
-            (:numero, :id_evento, :nome, :descricao, :sala, :vagas,
+            (:id_evento, :nome, :descricao, :sala, :vagas,
              :data_hora_inicio, :data_hora_fim)
         """
     )
@@ -307,8 +305,8 @@ def create_event(
                 {
                     "nome": nome,
                     "descricao": descricao,
-                    "data_hora_inicio": ensure_utc(data_hora_inicio),
-                    "data_hora_fim": ensure_utc(data_hora_fim),
+                    "data_hora_inicio": ensure_timezone(data_hora_inicio),
+                    "data_hora_fim": ensure_timezone(data_hora_fim),
                     "classificacao_indicativa": classificacao_indicativa,
                     "vagas": vagas,
                     "latitude": latitude,
@@ -325,21 +323,17 @@ def create_event(
         event_row = dict(result.mappings().first())
         new_id: int = event_row["id"]
         for activity in activities:
-            try:
-                session.execute(
-                    activity_query,
-                    {
-                        "numero": activity.numero,
-                        "id_evento": new_id,
-                        "nome": activity.nome,
-                        "descricao": activity.descricao,
-                        "sala": activity.sala,
-                        "vagas": activity.vagas,
-                        "data_hora_inicio": ensure_utc(activity.data_hora_inicio),
-                        "data_hora_fim": ensure_utc(activity.data_hora_fim),
-                    },
-                )
-            except IntegrityError as e:
-                raise DuplicateActivityRegistration from e
+            session.execute(
+                activity_query,
+                {
+                    "id_evento": new_id,
+                    "nome": activity.nome,
+                    "descricao": activity.descricao,
+                    "sala": activity.sala,
+                    "vagas": activity.vagas,
+                    "data_hora_inicio": ensure_timezone(activity.data_hora_inicio),
+                    "data_hora_fim": ensure_timezone(activity.data_hora_fim),
+                },
+            )
         session.commit()
     return _row_to_event(event_row)

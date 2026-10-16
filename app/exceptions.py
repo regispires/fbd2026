@@ -33,13 +33,6 @@ class DuplicateEventRegistration(Exception):
     """
 
 
-class DuplicateActivityRegistration(Exception):
-    """
-    Violação de unicidade relacionada a atividade: o número da atividade já
-    está em uso.
-    """
-
-
 class DuplicateAttendance(Exception):
     """
     O usuário já possui presença registrada na atividade (violação da PK

@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS usuario (
 );
 
 CREATE OR REPLACE VIEW usuario_com_idade AS (
-    SELECT id, nome, cpf, email, EXTRACT(YEARS FROM AGE(data_nascimento)) as idade FROM usuario
+    SELECT id, nome, cpf, email, papel, data_nascimento,
+           EXTRACT(YEARS FROM AGE(data_nascimento)) as idade
+    FROM usuario
 );
 
 CREATE TABLE IF NOT EXISTS evento (
@@ -44,7 +46,10 @@ CREATE TABLE IF NOT EXISTS evento (
 );
 
 CREATE TABLE IF NOT EXISTS atividade (
-    numero INTEGER UNIQUE NOT NULL,
+    -- gerado pelo banco; único na tabela inteira, mas a PK é composta com o
+    -- evento para que presença e ministrantes referenciem (id, id_evento) e
+    -- não possam apontar para uma atividade de outro evento
+    id SERIAL UNIQUE NOT NULL,
     id_evento INTEGER REFERENCES evento(id) NOT NULL,
     nome TEXT NOT NULL,
     descricao TEXT,
@@ -53,7 +58,7 @@ CREATE TABLE IF NOT EXISTS atividade (
     data_hora_inicio TIMESTAMPTZ NOT NULL,
     data_hora_fim TIMESTAMPTZ NOT NULL,
 
-    PRIMARY KEY (numero,id_evento)
+    PRIMARY KEY (id,id_evento)
 );
 
 CREATE TABLE IF NOT EXISTS inscricao_evento (
@@ -71,11 +76,11 @@ CREATE TABLE IF NOT EXISTS inscricao_evento (
 CREATE TABLE IF NOT EXISTS presenca_atividade(
     id_usuario INTEGER NOT NULL,
     id_evento INTEGER NOT NULL,
-    numero_atividade INTEGER NOT NULL,
+    id_atividade INTEGER NOT NULL,
 
-    PRIMARY KEY (id_usuario,id_evento,numero_atividade),
+    PRIMARY KEY (id_usuario,id_evento,id_atividade),
 
-    FOREIGN KEY (numero_atividade,id_evento) REFERENCES atividade(numero,id_evento),
+    FOREIGN KEY (id_atividade,id_evento) REFERENCES atividade(id,id_evento),
 
     -- utilizando uma chave estrangeira composta para referenciar apenas
     -- usuários que participam de um evento como participantes
@@ -85,15 +90,15 @@ CREATE TABLE IF NOT EXISTS presenca_atividade(
 CREATE TABLE IF NOT EXISTS ministra_atividade (
     id_usuario INTEGER NOT NULL,
     id_evento INTEGER NOT NULL,
-    numero_atividade INTEGER NOT NULL,
+    id_atividade INTEGER NOT NULL,
 
     mini_bio TEXT,
     instituicao TEXT NOT NULL,
     link_lattes TEXT ,
 
-    PRIMARY KEY (id_usuario,id_evento,numero_atividade),
+    PRIMARY KEY (id_usuario,id_evento,id_atividade),
 
-    FOREIGN KEY (numero_atividade,id_evento) REFERENCES atividade(numero,id_evento),
+    FOREIGN KEY (id_atividade,id_evento) REFERENCES atividade(id,id_evento),
     FOREIGN KEY (id_usuario) REFERENCES usuario(id)
 );
 

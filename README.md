@@ -47,7 +47,7 @@ erDiagram
 
     ATIVIDADE {
         int id_evento PK, FK
-        int numero PK
+        int id PK
         string nome
         string descricao
         string sala
@@ -69,13 +69,13 @@ erDiagram
     PRESENCA_ATIVIDADE {
         int id_usuario PK, FK
         int id_evento PK, FK
-        int numero_atividade PK, FK
+        int id_atividade PK, FK
     }
 
     MINISTRANTE {
         int id_usuario PK, FK
         int id_evento PK, FK
-        int numero_atividade PK, FK
+        int id_atividade PK, FK
         string mini_bio
         string instituicao
         string link_lattes

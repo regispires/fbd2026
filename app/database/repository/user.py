@@ -132,15 +132,15 @@ class User:
         event_clause = "AND p.id_evento = :event_id" if event_id is not None else ""
         query = text(
             f"""
-            SELECT p.id_usuario, p.id_evento, p.numero_atividade,
+            SELECT p.id_usuario, p.id_evento, p.id_atividade,
                    e.nome AS event_nome,
                    a.nome AS activity_nome, a.sala
             FROM presenca_atividade p
             JOIN evento e ON e.id = p.id_evento
             JOIN atividade a ON a.id_evento = p.id_evento
-                     AND a.numero = p.numero_atividade
+                     AND a.id = p.id_atividade
             WHERE p.id_usuario = :id_usuario {event_clause}
-            ORDER BY p.id_evento, p.numero_atividade
+            ORDER BY p.id_evento, p.id_atividade
             """
         )
         params: dict[str, int] = {"id_usuario": self.id}
@@ -153,7 +153,7 @@ class User:
                 ActivityAttendance(
                     user_id=r["id_usuario"],
                     event_id=r["id_evento"],
-                    numero_atividade=r["numero_atividade"],
+                    id_atividade=r["id_atividade"],
                     event_nome=r["event_nome"],
                     activity_nome=r["activity_nome"],
                     sala=r["sala"],

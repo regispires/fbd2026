@@ -7,17 +7,23 @@ ORM. Modificações usam transações explícitas: session.begin e session.commi
 de modo que erros rolem a transação de volta ao fechar a sessão.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from app.database.settings import settings
+
+# o pacote tzdata fornece a base de fusos (ausente na imagem alpine)
+FUSO_EVENTOS = ZoneInfo(settings.DATABASE_TIMEZONE)
 
 
-def ensure_utc(dt: datetime) -> datetime:
+def ensure_timezone(dt: datetime) -> datetime:
     """
     Garante que um ``datetime`` chegue ao banco com timezone.
 
-    O banco armazena ``TIMESTAMPTZ``; datetimes sem timezone são assumidos
-    como UTC para não depender do fuso do servidor.
+    O banco armazena ``TIMESTAMPTZ``; datetimes sem timezone (ex.: vindos de
+    formulários) são assumidos no fuso dos eventos (``DATABASE_TIMEZONE``).
     """
-    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+    return dt.replace(tzinfo=FUSO_EVENTOS) if dt.tzinfo is None else dt
 
 
 def as_bytes(value: memoryview | None) -> bytes | None:

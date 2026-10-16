@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     DATABASE_NAME: SecretStr
     DATABASE_HOST: str = "localhost"
     DATABASE_PORT: int = 5432
+    # TIMESTAMPTZ chegam no horário local e as páginas os exibem sem converter
+    DATABASE_TIMEZONE: str = "America/Fortaleza"
 
     ENVIRONMENT: Literal["DEVELOPMENT", "PRODUCTION"]
     SESSION_DURATION_HOURS: timedelta = timedelta(hours=24)

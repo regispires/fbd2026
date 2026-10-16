@@ -32,7 +32,7 @@ from fastapi.security import APIKeyCookie
 from nicegui import app
 from pydantic import BaseModel
 
-from app.database.repository import ensure_utc
+from app.database.repository import ensure_timezone
 from app.database.repository.session import (
     create_session,
     delete_session_by_hash,
@@ -142,7 +142,7 @@ def login(payload: LoginRequest) -> JSONResponse:
             status_code=HTTPStatus.UNAUTHORIZED, detail="E-mail ou senha inválidos"
         )
 
-    expira_em = ensure_utc(datetime.now(UTC) + settings.SESSION_DURATION_HOURS)
+    expira_em = ensure_timezone(datetime.now(UTC) + settings.SESSION_DURATION_HOURS)
     token = create_session(user.id, expira_em)
     response = JSONResponse(content={"status": "ok"})
 

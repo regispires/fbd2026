@@ -143,14 +143,14 @@ def register_user_for_event(
 
 
 def add_attendance(
-    user_id: int, event_id: int, numero_atividade: int
+    user_id: int, event_id: int, activity_id: int
 ) -> ActivityAttendance:
     """
     Registra a presença de um participante em uma atividade (regra de
     negócio: um administrador adiciona a presença durante ou após a
     atividade), aplicando:
 
-    - o usuário existe e a atividade existe (``numero`` é único no banco);
+    - o usuário existe e a atividade existe (o ``id`` da atividade é único no banco);
     - a atividade pertence ao evento informado (senão,
       ``WrongEventActivityInscription``);
     - o usuário está inscrito no evento e a inscrição está **confirmada**
@@ -164,7 +164,7 @@ def add_attendance(
     # Valida a existência do usuário (levanta UserNotFound se não existir);
     # o resultado não é usado, apenas o efeito de verificação.
     _ = get_user(user_id)
-    activity = get_activity(numero_atividade)
+    activity = get_activity(activity_id)
     if activity.id_evento != event_id:
         raise WrongEventActivityInscription
 
@@ -179,9 +179,9 @@ def add_attendance(
         SELECT COUNT(id_usuario) AS total
         FROM presenca_atividade
         WHERE id_evento = :event_id
-          AND numero_atividade = :numero_atividade
+          AND id_atividade = :activity_id
         """,
-        {"event_id": event_id, "numero_atividade": numero_atividade},
+        {"event_id": event_id, "activity_id": activity_id},
     )
     if used >= activity.vagas:
         raise NoMoreVacancy
@@ -193,14 +193,14 @@ def add_attendance(
                 text(
                     """
                     INSERT INTO presenca_atividade
-                        (id_usuario, id_evento, numero_atividade)
-                    VALUES (:user_id, :event_id, :numero_atividade)
+                        (id_usuario, id_evento, id_atividade)
+                    VALUES (:user_id, :event_id, :activity_id)
                     """
                 ),
                 {
                     "user_id": user_id,
                     "event_id": event_id,
-                    "numero_atividade": numero_atividade,
+                    "activity_id": activity_id,
                 },
             )
         except IntegrityError as e:
@@ -210,11 +210,11 @@ def add_attendance(
     return ActivityAttendance(
         user_id=user_id,
         event_id=event_id,
-        numero_atividade=numero_atividade,
+        id_atividade=activity_id,
     )
 
 
-def remove_attendance(user_id: int, event_id: int, numero_atividade: int) -> None:
+def remove_attendance(user_id: int, event_id: int, activity_id: int) -> None:
     """
     Remove a presença de um participante da atividade (desfaz um registro
     de presença). Levanta ``AttendanceNotFound`` se não houver presença a
@@ -225,7 +225,7 @@ def remove_attendance(user_id: int, event_id: int, numero_atividade: int) -> Non
         DELETE FROM presenca_atividade
         WHERE id_usuario = :user_id
           AND id_evento = :event_id
-          AND numero_atividade = :numero_atividade
+          AND id_atividade = :activity_id
         """
     )
     with session_maker() as session:
@@ -235,7 +235,7 @@ def remove_attendance(user_id: int, event_id: int, numero_atividade: int) -> Non
             {
                 "user_id": user_id,
                 "event_id": event_id,
-                "numero_atividade": numero_atividade,
+                "activity_id": activity_id,
             },
         )
         session.commit()
