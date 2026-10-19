@@ -8,6 +8,8 @@ dependencies = [
     "faker==40.39.0",
     "nicegui==3.17.1",
     "psycopg2-binary==2.9.13",
+    "pwdlib[argon2]==0.3.1",
     "pydantic-settings==2.15.0",
     "sqlalchemy==2.1.1",
+    "tzdata==2026.4",
 ]
