@@ -15,7 +15,12 @@ from typing import Literal
 from sqlalchemy import text
 
 from app.database import session_maker
-from app.exceptions import InscriptionNotPending
+from app.database.repository import eh_pdf
+from app.exceptions import (
+    CannotApproveOwnInscription,
+    InscriptionNotPending,
+    InscriptionProofNotPdf,
+)
 
 Status = Literal["pendente", "confirmada", "cancelada"]
 
@@ -25,11 +30,10 @@ class EventInscription:
     """
     Linha da ``inscricao_evento``.
 
-    O usuário informa o ``valor`` da inscrição e anexa um
-    ``comprovante_usuario`` (BYTEA); o administrador registra uma
-    ``comentario_administrador`` após avaliar. Os campos extras de exibição
-    (nome do usuário/evento, horários) são opcionais: cada leitura preenche
-    apenas as colunas que o contexto da interface precisa.
+    O ``valor`` é derivado do preço do evento (cheio ou metade quando
+    ``meia=True``); o usuário anexa um ``comprovante_usuario`` (BYTEA);
+    o administrador registra um ``comentario_administrador`` após avaliar.
+    Os campos extras de exibição são opcionais.
     """
 
     user_id: int
@@ -37,6 +41,7 @@ class EventInscription:
     data_inscricao: datetime
     status: str
     valor: float | None = None
+    meia: bool = False
     comprovante_usuario: bytes | None = None
     comentario_administrador: str | None = None
     user_nome: str | None = None
@@ -44,41 +49,57 @@ class EventInscription:
     data_hora_inicio: datetime | None = None
     data_hora_fim: datetime | None = None
 
-    def confirm(self) -> None:
+    def approve(self, by_user_id: int) -> None:
         """
-        Confirma uma inscrição pendente (regra de negócio: a confirmação é
-        feita por um administrador).
+        Aprova uma inscrição pendente (regra: administrador).
 
-        O limite de vagas não é revalidado aqui: a vaga já foi consumida no
-        momento da inscrição (que nasce ``pendente``), e a confirmação só
-        troca o status mantendo a inscrição ativa.
+        Levanta ``CannotApproveOwnInscription`` se o avaliador for o
+        próprio solicitante.
         """
+        if by_user_id == self.user_id:
+            raise CannotApproveOwnInscription
+        if self.status != "pendente":
+            raise InscriptionNotPending
         self._set_status("confirmada")
+
+    def reject(self, by_user_id: int) -> None:
+        """
+        Recusa (soft cancel) uma inscrição pendente.
+
+        Levanta ``CannotApproveOwnInscription`` se o avaliador for o
+        próprio solicitante.
+        """
+        if by_user_id == self.user_id:
+            raise CannotApproveOwnInscription
+        if self.status != "pendente":
+            raise InscriptionNotPending
+        self._set_status("cancelada")
 
     def cancel(self) -> None:
         """
-        Cancela a inscrição de evento (regra de negócio: o usuário que
-        solicitou a inscrição pode cancelá-la, pendente ou confirmada).
-
-        O cancelamento é um *soft cancel* (``status = 'cancelada'``), de
-        modo a preservar o histórico. A recusa do administrador também usa
-        este mesmo status (o enum ``status_inscricao`` não possui
-        ``recusada``).
+        Cancela a inscrição (usuário). Permitido para ``pendente`` ou
+        ``confirmada``. O cancelamento é um *soft cancel*.
         """
         self._set_status("cancelada")
 
-    def update(self, valor: float, comprovante_usuario: bytes | None) -> None:
+    def update(
+        self, meia: bool, valor: float, comprovante_usuario: bytes | None
+    ) -> None:
         """
-        Edita o valor e o comprovante de uma inscrição pendente (regra de
-        negócio: o usuário só pode editar enquanto a inscrição é
-        ``pendente``).
+        Edita a meia-entrada, valor derivado e o comprovante de uma
+        inscrição **pendente**. Um novo comprovante, quando informado,
+        precisa ser PDF.
         """
         if self.status != "pendente":
             raise InscriptionNotPending
+        if comprovante_usuario is not None and not eh_pdf(comprovante_usuario):
+            raise InscriptionProofNotPdf
         query = text(
             """
             UPDATE inscricao_evento
-            SET valor = :valor, comprovante_usuario = :comprovante_usuario
+            SET meia = :meia,
+                valor = :valor,
+                comprovante_usuario = :comprovante_usuario
             WHERE id_usuario = :user_id AND id_evento = :event_id
             """
         )
@@ -87,6 +108,7 @@ class EventInscription:
             _ = session.execute(
                 query,
                 {
+                    "meia": meia,
                     "valor": valor,
                     "comprovante_usuario": comprovante_usuario,
                     "user_id": self.user_id,
@@ -94,6 +116,7 @@ class EventInscription:
                 },
             )
             session.commit()
+        self.meia = meia
         self.valor = valor
         self.comprovante_usuario = comprovante_usuario
 

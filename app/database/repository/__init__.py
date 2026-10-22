@@ -31,6 +31,16 @@ def as_bytes(value: memoryview | None) -> bytes | None:
     return bytes(value) if value is not None else None
 
 
+def eh_pdf(dados: bytes) -> bool:
+    """
+    Verifica o cabeçalho PDF (``%PDF``) no início dos bytes.
+
+    Usado para validar o comprovante enviado: o filtro ``accept`` do
+    uploader é apenas no cliente, então a validação definitiva fica aqui.
+    """
+    return dados[:4] == b"%PDF"
+
+
 def parse_point(localizacao: str | None) -> tuple[float | None, float | None]:
     """
     Converte o texto de um ``POINT`` (formato ``"(lon,lat)"``) em

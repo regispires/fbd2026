@@ -96,7 +96,7 @@ class User:
         query = text(
             """
             SELECT i.id_usuario, i.id_evento, i.data_inscricao, i.status,
-                   i.valor, i.comprovante_usuario, i.comentario_administrador,
+                   i.valor, i.meia, i.comprovante_usuario, i.comentario_administrador,
                    e.nome AS event_nome, e.data_hora_inicio, e.data_hora_fim
             FROM inscricao_evento i
             JOIN evento e ON e.id = i.id_evento
@@ -114,6 +114,7 @@ class User:
                     data_inscricao=r["data_inscricao"],
                     status=r["status"],
                     valor=r["valor"],
+                    meia=r["meia"],
                     comprovante_usuario=as_bytes(r["comprovante_usuario"]),
                     comentario_administrador=r["comentario_administrador"],
                     event_nome=r["event_nome"],

@@ -45,40 +45,40 @@ SELECT setval(pg_get_serial_sequence('usuario', 'id'), (SELECT MAX(id) FROM usua
 -- banner e banner_thumbnail usam o picsum.photos com uma seed por evento: a mesma
 -- seed devolve sempre a mesma imagem, em qualquer tamanho pedido
 
-INSERT INTO evento (id, nome, descricao, data_hora_inicio, data_hora_fim, classificacao_indicativa, vagas, localizacao, banner, banner_thumbnail) VALUES
+INSERT INTO evento (id, nome, descricao, data_hora_inicio, data_hora_fim, classificacao_indicativa, vagas, localizacao, banner, banner_thumbnail, valor) VALUES
     (1, 'Semana Acadêmica de Computação 2026',
         'Uma semana de palestras, minicursos e mesas redondas sobre computação.',
         '2026-05-11 08:00:00-03', '2026-05-15 18:00:00-03', NULL, 100, POINT(-38.5743, -3.7461),
-        'https://picsum.photos/seed/evento-1/1200/400', 'https://picsum.photos/seed/evento-1/400/225'),
+        'https://picsum.photos/seed/evento-1/1200/400', 'https://picsum.photos/seed/evento-1/400/225', 50.0),
     (2, 'Workshop de Banco de Dados',
         'Workshop prático sobre modelagem e consultas SQL.',
         '2026-08-20 13:00:00-03', '2026-08-20 18:00:00-03', 12, 30, POINT(-38.5743, -3.7461),
-        'https://picsum.photos/seed/evento-2/1200/400', 'https://picsum.photos/seed/evento-2/400/225'),
+        'https://picsum.photos/seed/evento-2/1200/400', 'https://picsum.photos/seed/evento-2/400/225', 30.0),
     (3, 'Hackathon Cidades Inteligentes',
         'Maratona de 36 horas para desenvolver soluções para problemas urbanos.',
         '2026-11-07 09:00:00-03', '2026-11-08 18:00:00-03', 16, 40, POINT(-38.5267, -3.7319),
-        'https://picsum.photos/seed/evento-3/1200/400', 'https://picsum.photos/seed/evento-3/400/225'),
+        'https://picsum.photos/seed/evento-3/1200/400', 'https://picsum.photos/seed/evento-3/400/225', 20.0),
     (4, 'Encontro de Segurança da Informação',
         'Palestras e um CTF introdutório sobre segurança ofensiva e defensiva.',
         '2026-12-03 08:00:00-03', '2026-12-04 17:00:00-03', 18, 50, NULL,
-        'https://picsum.photos/seed/evento-4/1200/400', 'https://picsum.photos/seed/evento-4/400/225'),
+        'https://picsum.photos/seed/evento-4/1200/400', 'https://picsum.photos/seed/evento-4/400/225', 80.0),
     -- evento lotado: 3 vagas e 3 inscrições ativas (confirmadas + pendentes)
     (5, 'Oficina de Robótica para Iniciantes',
         'Oficina introdutória de robótica com kits Arduino.',
         '2026-10-25 08:00:00-03', '2026-10-25 12:00:00-03', 10, 3, POINT(-38.5431, -3.7172),
-        'https://picsum.photos/seed/evento-5/1200/400', 'https://picsum.photos/seed/evento-5/400/225'),
+        'https://picsum.photos/seed/evento-5/1200/400', 'https://picsum.photos/seed/evento-5/400/225', 15.0),
     (6, 'Feira de Profissões em Tecnologia',
         'Estandes de empresas e conversas com profissionais da área.',
         '2027-01-20 09:00:00-03', '2027-01-20 17:00:00-03', NULL, 200, POINT(-38.5267, -3.7319),
-        'https://picsum.photos/seed/evento-6/1200/400', 'https://picsum.photos/seed/evento-6/400/225'),
+        'https://picsum.photos/seed/evento-6/1200/400', 'https://picsum.photos/seed/evento-6/400/225', 0.0),
     (7, 'Bootcamp de Desenvolvimento Web',
         'Três dias de imersão em HTML, CSS, JavaScript e APIs REST.',
         '2027-02-08 08:00:00-03', '2027-02-10 18:00:00-03', 14, 35, POINT(-38.5743, -3.7461),
-        'https://picsum.photos/seed/evento-7/1200/400', 'https://picsum.photos/seed/evento-7/400/225'),
+        'https://picsum.photos/seed/evento-7/1200/400', 'https://picsum.photos/seed/evento-7/400/225', 60.0),
     (8, 'Simpósio de Ciência de Dados',
         'Palestras sobre aprendizado de máquina, visualização e ética em dados.',
         '2027-03-15 08:30:00-03', '2027-03-16 17:30:00-03', NULL, 120, NULL,
-        'https://picsum.photos/seed/evento-8/1200/400', 'https://picsum.photos/seed/evento-8/400/225');
+        'https://picsum.photos/seed/evento-8/1200/400', 'https://picsum.photos/seed/evento-8/400/225', 40.0);
 
 -- ids foram inseridos explicitamente, então a sequência precisa ser ajustada
 SELECT setval(pg_get_serial_sequence('evento', 'id'), (SELECT MAX(id) FROM evento));
@@ -146,47 +146,47 @@ INSERT INTO ministra_atividade (id_usuario, id_evento, id_atividade, mini_bio, i
 -- =====================================================================
 -- comprovante_usuario contém apenas bytes de exemplo, não um arquivo real
 
-INSERT INTO inscricao_evento (id_usuario, id_evento, data_inscricao, status, comentario_administrador, comprovante_usuario, valor) VALUES
-    -- Evento 1 (livre, R$ 50,00)
-    ( 3, 1, '2026-04-02 10:15:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0003-1', 'UTF8'), 50.0),
-    ( 4, 1, '2026-04-03 19:40:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0004-1', 'UTF8'), 50.0),
-    ( 5, 1, '2026-04-05 08:05:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0005-1', 'UTF8'), 50.0),
-    ( 6, 1, '2026-04-10 14:22:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0006-1', 'UTF8'), 50.0),
-    ( 7, 1, '2026-04-11 16:00:00-03', 'confirmada', 'Comprovante legível, pagamento conferido.', convert_to('comprovante-pix-0007-1', 'UTF8'), 50.0),
-    (10, 1, '2026-04-20 09:30:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0010-1', 'UTF8'), 50.0),
-    (13, 1, '2026-04-21 21:10:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0013-1', 'UTF8'), 50.0),
-    (14, 1, '2026-04-28 11:45:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0014-1', 'UTF8'), 50.0),
-    (15, 1, '2026-05-01 13:00:00-03', 'cancelada',  'Cancelada a pedido da participante.', convert_to('comprovante-pix-0015-1', 'UTF8'), 50.0),
+INSERT INTO inscricao_evento (id_usuario, id_evento, data_inscricao, status, comentario_administrador, comprovante_usuario, valor, meia) VALUES
+    -- Evento 1 (R$ 50,00)
+    ( 3, 1, '2026-04-02 10:15:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0003-1', 'UTF8'), 50.0, FALSE),
+    ( 4, 1, '2026-04-03 19:40:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0004-1', 'UTF8'), 50.0, FALSE),
+    ( 5, 1, '2026-04-05 08:05:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0005-1', 'UTF8'), 50.0, FALSE),
+    ( 6, 1, '2026-04-10 14:22:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0006-1', 'UTF8'), 50.0, FALSE),
+    ( 7, 1, '2026-04-11 16:00:00-03', 'confirmada', 'Comprovante legível, pagamento conferido.', convert_to('%PDF-1.4 comprovante-pix-0007-1', 'UTF8'), 50.0, FALSE),
+    (10, 1, '2026-04-20 09:30:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0010-1', 'UTF8'), 50.0, FALSE),
+    (13, 1, '2026-04-21 21:10:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0013-1', 'UTF8'), 50.0, FALSE),
+    (14, 1, '2026-04-28 11:45:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0014-1', 'UTF8'), 50.0, FALSE),
+    (15, 1, '2026-05-01 13:00:00-03', 'cancelada',  'Cancelada a pedido da participante.', convert_to('%PDF-1.4 comprovante-pix-0015-1', 'UTF8'), 50.0, FALSE),
 
-    -- Evento 2 (12+, R$ 30,00)
-    ( 3, 2, '2026-07-28 10:00:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0003-2', 'UTF8'), 30.0),
-    ( 4, 2, '2026-07-29 15:20:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0004-2', 'UTF8'), 30.0),
-    ( 6, 2, '2026-08-01 09:00:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0006-2', 'UTF8'), 30.0),
-    ( 7, 2, '2026-08-02 18:30:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0007-2', 'UTF8'), 30.0),
-    (10, 2, '2026-08-05 20:00:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0010-2', 'UTF8'), 30.0),
-    (13, 2, '2026-08-10 07:50:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0013-2', 'UTF8'), 30.0),
-    (14, 2, '2026-08-12 12:00:00-03', 'cancelada',  'Valor informado diferente do comprovante.', convert_to('comprovante-pix-0014-2', 'UTF8'), 15.0),
+    -- Evento 2 (R$ 30,00) - inclui meia-entrada confirmada e meia-entrada cancelada
+    ( 3, 2, '2026-07-28 10:00:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0003-2', 'UTF8'), 30.0, FALSE),
+    ( 4, 2, '2026-07-29 15:20:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0004-2', 'UTF8'), 30.0, FALSE),
+    ( 6, 2, '2026-08-01 09:00:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0006-2', 'UTF8'), 15.0, TRUE),
+    ( 7, 2, '2026-08-02 18:30:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0007-2', 'UTF8'), 30.0, FALSE),
+    (10, 2, '2026-08-05 20:00:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0010-2', 'UTF8'), 30.0, FALSE),
+    (13, 2, '2026-08-10 07:50:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0013-2', 'UTF8'), 30.0, FALSE),
+    (14, 2, '2026-08-12 12:00:00-03', 'cancelada',  'Valor informado diferente do comprovante.', convert_to('%PDF-1.4 comprovante-pix-0014-2', 'UTF8'), 15.0, TRUE),
 
-    -- Evento 3 (16+, R$ 20,00)
-    ( 3, 3, '2026-09-15 10:00:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0003-3', 'UTF8'), 20.0),
-    ( 4, 3, '2026-09-16 11:30:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0004-3', 'UTF8'), 20.0),
-    ( 5, 3, '2026-09-20 17:45:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0005-3', 'UTF8'), 20.0),
-    (13, 3, '2026-09-22 08:10:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0013-3', 'UTF8'), 20.0),
-    ( 6, 3, '2026-10-08 22:15:00-03', 'pendente',   NULL, convert_to('comprovante-pix-0006-3', 'UTF8'), 20.0),
-    ( 7, 3, '2026-10-12 09:05:00-03', 'pendente',   NULL, NULL, 20.0),
-    (14, 3, '2026-09-30 14:00:00-03', 'cancelada',  NULL, convert_to('comprovante-pix-0014-3', 'UTF8'), 20.0),
+    -- Evento 3 (R$ 20,00) - inclui duas pendentes para avaliação
+    ( 3, 3, '2026-09-15 10:00:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0003-3', 'UTF8'), 20.0, FALSE),
+    ( 4, 3, '2026-09-16 11:30:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0004-3', 'UTF8'), 20.0, FALSE),
+    ( 5, 3, '2026-09-20 17:45:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0005-3', 'UTF8'), 20.0, FALSE),
+    (13, 3, '2026-09-22 08:10:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0013-3', 'UTF8'), 20.0, FALSE),
+    ( 6, 3, '2026-10-08 22:15:00-03', 'pendente',   NULL, convert_to('%PDF-1.4 comprovante-pix-0006-3', 'UTF8'), 20.0, FALSE),
+    ( 7, 3, '2026-10-12 09:05:00-03', 'pendente',   NULL, NULL, 20.0, FALSE),
+    (14, 3, '2026-09-30 14:00:00-03', 'cancelada',  NULL, convert_to('%PDF-1.4 comprovante-pix-0014-3', 'UTF8'), 20.0, FALSE),
 
-    -- Evento 4 (18+, R$ 80,00)
-    ( 3, 4, '2026-10-01 10:00:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0003-4', 'UTF8'), 80.0),
-    ( 5, 4, '2026-10-03 16:30:00-03', 'pendente',   NULL, convert_to('comprovante-pix-0005-4', 'UTF8'), 80.0),
-    (13, 4, '2026-10-09 19:00:00-03', 'pendente',   'Aguardando envio de comprovante legível.', convert_to('comprovante-pix-0013-4', 'UTF8'), 80.0),
-    (15, 4, '2026-10-14 08:20:00-03', 'pendente',   NULL, convert_to('comprovante-pix-0015-4', 'UTF8'), 80.0),
+    -- Evento 4 (R$ 80,00) - inclui três pendentes (uma meia-entrada)
+    ( 3, 4, '2026-10-01 10:00:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0003-4', 'UTF8'), 80.0, FALSE),
+    ( 5, 4, '2026-10-03 16:30:00-03', 'pendente',   NULL, convert_to('%PDF-1.4 comprovante-pix-0005-4', 'UTF8'), 80.0, FALSE),
+    (13, 4, '2026-10-09 19:00:00-03', 'pendente',   'Aguardando envio de comprovante legível.', convert_to('%PDF-1.4 comprovante-pix-0013-4', 'UTF8'), 40.0, TRUE),
+    (15, 4, '2026-10-14 08:20:00-03', 'pendente',   NULL, convert_to('%PDF-1.4 comprovante-pix-0015-4', 'UTF8'), 80.0, FALSE),
 
-    -- Evento 5 (10+, 3 vagas, R$ 15,00) - lotado
-    (10, 5, '2026-10-01 18:00:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0010-5', 'UTF8'), 15.0),
-    (11, 5, '2026-10-02 18:30:00-03', 'confirmada', NULL, convert_to('comprovante-pix-0011-5', 'UTF8'), 15.0),
-    ( 6, 5, '2026-10-10 10:00:00-03', 'pendente',   NULL, convert_to('comprovante-pix-0006-5', 'UTF8'), 15.0),
-    ( 7, 5, '2026-10-04 13:15:00-03', 'cancelada',  'Comprovante não corresponde a um pagamento válido.', convert_to('comprovante-pix-0007-5', 'UTF8'), 15.0);
+    -- Evento 5 (R$ 15,00) - lotado
+    (10, 5, '2026-10-01 18:00:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0010-5', 'UTF8'), 15.0, FALSE),
+    (11, 5, '2026-10-02 18:30:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0011-5', 'UTF8'), 15.0, FALSE),
+    ( 6, 5, '2026-10-10 10:00:00-03', 'pendente',   NULL, convert_to('%PDF-1.4 comprovante-pix-0006-5', 'UTF8'), 15.0, FALSE),
+    ( 7, 5, '2026-10-04 13:15:00-03', 'cancelada',  'Comprovante não corresponde a um pagamento válido.', convert_to('%PDF-1.4 comprovante-pix-0007-5', 'UTF8'), 15.0, FALSE);
 
 -- =====================================================================
 -- Presenças

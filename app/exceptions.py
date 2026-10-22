@@ -54,6 +54,25 @@ class InscriptionNotPending(Exception):
     """
 
 
+class CannotApproveOwnInscription(Exception):
+    """
+    Administradores não podem aprovar ou recusar suas próprias inscrições.
+    """
+
+
+class MissingInscriptionProof(Exception):
+    """
+    A inscrição exige o envio de um comprovante, mas nenhum arquivo foi
+    anexado.
+    """
+
+
+class InscriptionProofNotPdf(Exception):
+    """
+    O comprovante anexado não é um arquivo PDF; apenas PDFs são aceitos.
+    """
+
+
 class EventWithoutActivity(Exception):
     """
     A operação criaria um evento sem atividades, o que viola a regra de

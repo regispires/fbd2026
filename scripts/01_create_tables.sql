@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS evento (
     -- URLs das imagens do evento: o banner em tamanho cheio (página de detalhes)
     -- e uma versão reduzida para as listagens
     banner TEXT,
-    banner_thumbnail TEXT
+    banner_thumbnail TEXT,
+    valor FLOAT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS atividade (
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS inscricao_evento (
     comentario_administrador TEXT,
     comprovante_usuario BYTEA,
     valor FLOAT,
+    meia BOOLEAN NOT NULL DEFAULT FALSE,
 
     PRIMARY KEY (id_usuario,id_evento)
 );

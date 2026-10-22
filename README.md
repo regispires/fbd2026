@@ -43,6 +43,7 @@ erDiagram
         datetime data_hora_fim
         decimal latitude
         decimal longitude
+        float valor
     }
 
     ATIVIDADE {
@@ -64,6 +65,7 @@ erDiagram
         string comentario_administrador
         string comprovante_usuario BYTEA
         float valor
+        boolean meia
     }
 
     PRESENCA_ATIVIDADE {
@@ -89,4 +91,13 @@ erDiagram
     USUARIO ||--o{ MINISTRANTE : "ministra"
     ATIVIDADE ||--|{ MINISTRANTE : "Ministrada por"
 ```
+
+O campo `INSCRICAO_EVENTO.valor` é derivado de `EVENTO.valor`: o usuário
+escolhe pagar o valor cheio (`meia = false`) ou a meia-entrada
+(`meia = true`, que armazena `EVENTO.valor / 2`). O `comprovante_usuario`
+serve como justificativa do pedido de meia-entrada quando `meia` é `true`.
+
+> **Nota:** os scripts em `./scripts` rodam apenas na inicialização de um
+> volume vazio do Postgres. Para aplicar mudanças no schema, remova o volume
+> e suba o compose novamente: `docker compose down -v && docker compose up -d`.
 

@@ -44,6 +44,8 @@ class Event:
     # versão reduzida usada nas listagens
     banner: str | None = None
     banner_thumbnail: str | None = None
+    # preço cheio do evento
+    valor: float = 0.0
     # Contagem de inscrições ativas (não canceladas); preenchida apenas pela
     # listagem de eventos, para a interface sinalizar eventos sem vagas.
     inscritas: int | None = None
@@ -67,6 +69,7 @@ class Event:
         vagas: int,
         latitude: float | None,
         longitude: float | None,
+        valor: float,
     ) -> None:
         """Atualiza o evento; o par latitude/longitude segue a regra ambos ou nenhum."""
         _require_lat_lng_pair(latitude, longitude)
@@ -79,6 +82,7 @@ class Event:
                 data_hora_fim = :data_hora_fim,
                 classificacao_indicativa = :classificacao_indicativa,
                 vagas = :vagas,
+                valor = :valor,
                 localizacao = CASE
                     WHEN :latitude IS NOT NULL AND :longitude IS NOT NULL
                     THEN POINT(:longitude, :latitude)
@@ -100,6 +104,7 @@ class Event:
                         "data_hora_fim": ensure_timezone(data_hora_fim),
                         "classificacao_indicativa": classificacao_indicativa,
                         "vagas": vagas,
+                        "valor": valor,
                         "latitude": latitude,
                         "longitude": longitude,
                     },
@@ -152,7 +157,7 @@ class EventList:
         query = text(
             """
             SELECT id, nome, descricao, data_hora_inicio, data_hora_fim,
-                   classificacao_indicativa, vagas, localizacao::text,
+                   classificacao_indicativa, vagas, valor, localizacao::text,
                    banner, banner_thumbnail,
                    (SELECT COUNT(i.id_usuario)
                     FROM inscricao_evento i
@@ -180,7 +185,7 @@ def get_event(event_id: int) -> Event:
     query = text(
         """
         SELECT id, nome, descricao, data_hora_inicio, data_hora_fim,
-               classificacao_indicativa, vagas, localizacao::text,
+               classificacao_indicativa, vagas, valor, localizacao::text,
                banner, banner_thumbnail,
                (SELECT COUNT(i.id_usuario)
                 FROM inscricao_evento i
@@ -241,6 +246,7 @@ def create_event(
     data_hora_fim: datetime,
     classificacao_indicativa: int | None,
     vagas: int,
+    valor: float,
     latitude: float | None = None,
     longitude: float | None = None,
     activities: list[ActivityInput] | None = None,
@@ -273,10 +279,10 @@ def create_event(
         """
         INSERT INTO evento
             (nome, descricao, data_hora_inicio, data_hora_fim,
-             classificacao_indicativa, vagas, localizacao, banner, banner_thumbnail)
+             classificacao_indicativa, vagas, valor, localizacao, banner, banner_thumbnail)
         VALUES
             (:nome, :descricao, :data_hora_inicio, :data_hora_fim,
-             :classificacao_indicativa, :vagas,
+             :classificacao_indicativa, :vagas, :valor,
              CASE
                  WHEN :latitude IS NOT NULL AND :longitude IS NOT NULL
                  THEN POINT(:longitude, :latitude)
@@ -284,7 +290,7 @@ def create_event(
              END,
              :banner, :banner_thumbnail)
         RETURNING id, nome, descricao, data_hora_inicio, data_hora_fim,
-                  classificacao_indicativa, vagas, localizacao::text,
+                  classificacao_indicativa, vagas, valor, localizacao::text,
                   banner, banner_thumbnail
         """
     )
@@ -309,6 +315,7 @@ def create_event(
                     "data_hora_fim": ensure_timezone(data_hora_fim),
                     "classificacao_indicativa": classificacao_indicativa,
                     "vagas": vagas,
+                    "valor": valor,
                     "latitude": latitude,
                     "longitude": longitude,
                     "banner": banner,

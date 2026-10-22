@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.database import session_maker
-from app.database.repository import as_bytes
+from app.database.repository import as_bytes, eh_pdf
 from app.database.repository.activity import get_activity
 from app.database.repository.event import get_event
 from app.database.repository.inscription import (
@@ -23,6 +23,8 @@ from app.exceptions import (
     DuplicateAttendance,
     DuplicateEventRegistration,
     EventInscriptionNotConfirmed,
+    InscriptionProofNotPdf,
+    MissingInscriptionProof,
     NoMoreVacancy,
     WrongEventActivityInscription,
 )
@@ -40,7 +42,7 @@ class InscriptionList:
         query = text(
             """
             SELECT i.id_usuario, i.id_evento, i.data_inscricao, i.status,
-                   i.valor, i.comprovante_usuario, i.comentario_administrador,
+                   i.valor, i.meia, i.comprovante_usuario, i.comentario_administrador,
                    u.nome AS user_nome,
                    e.nome AS event_nome, e.data_hora_inicio, e.data_hora_fim
             FROM inscricao_evento i
@@ -59,6 +61,7 @@ class InscriptionList:
                 data_inscricao=r["data_inscricao"],
                 status=r["status"],
                 valor=r["valor"],
+                meia=r["meia"],
                 comprovante_usuario=as_bytes(r["comprovante_usuario"]),
                 comentario_administrador=r["comentario_administrador"],
                 user_nome=r["user_nome"],
@@ -74,7 +77,7 @@ class InscriptionList:
 def register_user_for_event(
     user_id: int,
     event_id: int,
-    valor: float,
+    meia: bool,
     comprovante_usuario: bytes | None,
 ) -> EventInscription:
     """
@@ -82,12 +85,13 @@ def register_user_for_event(
 
     - o usuário existe e tem idade adequada à classificação indicativa;
     - há vagas disponíveis (inscrições não canceladas contadas);
-    - o usuário informa o valor da inscrição e anexa um comprovante.
+    - o usuário escolhe meia-entrada (meia=True) ou valor cheio;
+    - o valor é derivado do preço do evento;
+    - um comprovante PDF deve ser anexado (eventos gratuitos dispensam).
 
     A inscrição nasce como ``pendente`` e precisa ser confirmada por um
-    administrador (regra de negócio). O limite de inscrições por par
-    (usuário, evento) é garantido pela PK: uma nova inscrição no mesmo par
-    gera ``IntegrityError``, traduzido para ``DuplicateEventRegistration``.
+    administrador. O limite de inscrições por par (usuário, evento) é
+    garantido pela PK.
     """
     user = get_user(user_id)
     event = get_event(event_id)
@@ -96,6 +100,12 @@ def register_user_for_event(
         and user.idade < event.classificacao_indicativa
     ):
         raise AgeBelowClassification
+
+    if event.valor > 0 and comprovante_usuario is None:
+        # eventos gratuitos não exigem comprovante de pagamento
+        raise MissingInscriptionProof
+    if comprovante_usuario is not None and not eh_pdf(comprovante_usuario):
+        raise InscriptionProofNotPdf
 
     used = _count_active(
         """
@@ -108,6 +118,8 @@ def register_user_for_event(
     if used >= event.vagas:
         raise NoMoreVacancy
 
+    valor = round(event.valor / 2, 2) if meia else event.valor
+
     with session_maker() as session:
         session.begin()
         try:
@@ -115,8 +127,8 @@ def register_user_for_event(
                 text(
                     """
                     INSERT INTO inscricao_evento
-                        (id_usuario, id_evento, valor, comprovante_usuario)
-                    VALUES (:user_id, :event_id, :valor, :comprovante_usuario)
+                        (id_usuario, id_evento, valor, meia, comprovante_usuario)
+                    VALUES (:user_id, :event_id, :valor, :meia, :comprovante_usuario)
                     RETURNING data_inscricao
                     """
                 ),
@@ -124,6 +136,7 @@ def register_user_for_event(
                     "user_id": user_id,
                     "event_id": event_id,
                     "valor": valor,
+                    "meia": meia,
                     "comprovante_usuario": comprovante_usuario,
                 },
             )
@@ -138,6 +151,7 @@ def register_user_for_event(
         data_inscricao=data_inscricao,
         status="pendente",
         valor=valor,
+        meia=meia,
         comprovante_usuario=comprovante_usuario,
     )
 
@@ -244,12 +258,33 @@ def remove_attendance(user_id: int, event_id: int, activity_id: int) -> None:
         raise AttendanceNotFound
 
 
+def get_inscription(user_id: int, event_id: int) -> EventInscription | None:
+    """
+    Busca a inscrição de um usuário em um evento (qualquer status),
+    preenchendo os campos para exibição. ``None`` se não existir.
+    """
+    row = _fetch_event_inscription(user_id, event_id)
+    if row is None:
+        return None
+    return EventInscription(
+        user_id=row["id_usuario"],
+        event_id=row["id_evento"],
+        data_inscricao=row["data_inscricao"],
+        status=row["status"],
+        valor=row["valor"],
+        meia=row["meia"],
+        comprovante_usuario=as_bytes(row["comprovante_usuario"]),
+        comentario_administrador=row["comentario_administrador"],
+        user_nome=row["user_nome"],
+    )
+
+
 def get_event_inscriptions(event_id: int) -> list[EventInscription]:
     """Inscrições em um evento, com nome do usuário para exibição."""
     query = text(
         """
         SELECT i.id_usuario, i.id_evento, i.data_inscricao, i.status,
-               i.valor, i.comprovante_usuario, i.comentario_administrador,
+               i.valor, i.meia, i.comprovante_usuario, i.comentario_administrador,
                u.nome AS user_nome
         FROM inscricao_evento i
         JOIN usuario u ON u.id = i.id_usuario
@@ -266,6 +301,7 @@ def get_event_inscriptions(event_id: int) -> list[EventInscription]:
             data_inscricao=r["data_inscricao"],
             status=r["status"],
             valor=r["valor"],
+            meia=r["meia"],
             comprovante_usuario=as_bytes(r["comprovante_usuario"]),
             comentario_administrador=r["comentario_administrador"],
             user_nome=r["user_nome"],
@@ -311,10 +347,12 @@ def get_participants(event_id: int) -> list[User]:
 def _fetch_event_inscription(user_id: int, event_id: int) -> dict | None:
     query = text(
         """
-        SELECT id_usuario, id_evento, data_inscricao, status, valor,
-               comprovante_usuario, comentario_administrador
-        FROM inscricao_evento
-        WHERE id_usuario = :user_id AND id_evento = :event_id
+        SELECT i.id_usuario, i.id_evento, i.data_inscricao, i.status, i.valor,
+               i.meia, i.comprovante_usuario, i.comentario_administrador,
+               u.nome AS user_nome
+        FROM inscricao_evento i
+        JOIN usuario u ON u.id = i.id_usuario
+        WHERE i.id_usuario = :user_id AND i.id_evento = :event_id
         LIMIT 1
         """
     )
