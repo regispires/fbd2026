@@ -10,7 +10,7 @@ Painel administrativo de inscrições em eventos.
 
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends
 from nicegui import ui
 
 from app.auth import get_current_user, require_administrador
@@ -24,8 +24,8 @@ from app.exceptions import (
 )
 from app.pages.layout import (
     formatar_moeda,
-    header,
     meia_badge,
+    page,
     scroll_to_top,
     status_badge,
 )
@@ -52,17 +52,14 @@ def _confirmar_acao(titulo: str, mensagem: str, cor: str, on_click) -> None:
 
 
 # página privada + restrita a administradores
-@ui.page(
+@page(
     "/event/{event_id}/registrations",
     dependencies=[Depends(require_administrador)],
 )
 def admin_registrations_page(
-    request: Request,
     event_id: int,
-    admin: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(get_current_user)],
 ):
-    header(request)
-
     try:
         event: Event = get_event(event_id)
     except EventNotFound:
@@ -114,18 +111,15 @@ def admin_registrations_page(
     scroll_to_top()
 
 
-@ui.page(
+@page(
     "/event/{event_id}/registrations/{user_id}",
     dependencies=[Depends(require_administrador)],
 )
 def admin_registration_detail_page(
-    request: Request,
     event_id: int,
     user_id: int,
-    admin: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(get_current_user)],
 ):
-    header(request)
-
     try:
         event: Event = get_event(event_id)
     except EventNotFound:
@@ -146,7 +140,7 @@ def admin_registration_detail_page(
                 _ = ui.label("Inscrição não encontrada").classes("text-h6")
             return
 
-        eh_proprio = user_id == admin.id
+        eh_proprio = user_id == user.id
 
         with ui.card().classes("w-full"), ui.column().classes("w-full gap-4"):
             with ui.row().classes("w-full items-center gap-3"):
@@ -224,7 +218,7 @@ def admin_registration_detail_page(
                     def aprovar() -> None:
                         def confirmar() -> None:
                             try:
-                                inscription.approve(admin.id)
+                                inscription.approve(user.id)
                             except (
                                 CannotApproveOwnInscription,
                                 InscriptionNotPending,
@@ -249,7 +243,7 @@ def admin_registration_detail_page(
                     def recusar() -> None:
                         def confirmar() -> None:
                             try:
-                                inscription.reject(admin.id)
+                                inscription.reject(user.id)
                             except (
                                 CannotApproveOwnInscription,
                                 InscriptionNotPending,

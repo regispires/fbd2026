@@ -1,11 +1,30 @@
-from fastapi import Request
+from collections.abc import Callable
+from typing import Annotated
+
+from fastapi import Depends
 from nicegui import app, ui
 
-from app import api  # noqa: F401  (rotas de API criadas na importação)
-from app import pages  # noqa: F401  (rotas das páginas criadas na importação)
+from app import (
+    api,  # noqa: F401  (rotas de API criadas na importação)
+    pages,  # noqa: F401  (rotas das páginas criadas na importação)
+)
 from app.auth import get_optional_current_user
-from app.database.repository.event import Event, EventList
-from app.pages.layout import formatar_moeda, header, scroll_to_top
+from app.database.repository.activity import ActivityInput
+from app.database.repository.event import Event, EventList, create_event
+from app.database.repository.user import User
+from app.database.settings import settings
+from app.exceptions import DuplicateEventRegistration, InvalidActivitySchedule
+from app.pages.event_form import (
+    ActivityForm,
+    AtividadeFormValues,
+    campos_evento,
+    coletar_atividade,
+    coletar_valores,
+    conectar_atividade,
+    conectar_validacao_evento,
+    linha_atividade,
+)
+from app.pages.layout import formatar_moeda, header
 
 
 @app.on_connect
@@ -59,12 +78,144 @@ def _event_card(event: Event) -> None:
         _corpo(event)
 
 
+def _dialogo_criar_evento(ao_sucesso: Callable[[int], None]) -> None:
+    """
+    Dialog administrativo de criação de evento.
+
+    O evento precisa ter pelo menos uma atividade (regra de negócio), então
+    o dialog também lista as atividades a criar; cada uma precisa estar
+    contida no horário do evento. Ao concluir, ``ao_sucesso`` recebe o id
+    do evento criado.
+    """
+    linhas: list[tuple[ui.card, ActivityForm]] = []
+    revalidadores: list[Callable[[], None]] = []
+
+    with ui.dialog() as dialogo, ui.card().classes("w-full").style("max-width: 900px"):
+        _ = ui.label("Criar evento").classes("text-h6")
+        form = campos_evento()
+        # validações de múltiplos campos do evento (datas e lat/lng) exibidas
+        # inline, como as validações por campo
+        conectar_validacao_evento(form)
+
+        with ui.separator():
+            pass
+
+        _ = ui.label("Atividades (pelo menos uma)").classes("text-subtitle1")
+        with ui.column().classes("w-full gap-2") as atividades_container:
+            pass
+
+        def adicionar_linha() -> None:
+            with atividades_container:
+                card = ui.card().classes("w-full")
+                with card:
+                    tema = linha_atividade()
+            entrada = (card, tema)
+
+            def remover() -> None:
+                linhas.remove(entrada)
+                card.delete()
+
+            with card:
+                with ui.row().classes("w-full"):
+                    _ = ui.space()
+                    _ = ui.button(
+                        "Remover atividade", icon="delete", on_click=remover
+                    ).props("flat dense no-caps color=negative")
+
+            linhas.append(entrada)
+            # validação inline "atividade contida no horário do evento"
+            revalidadores.append(conectar_atividade(tema, form))
+
+        adicionar_linha()
+
+        # mudanças no horário do evento reavaliam a contenção de todas as linhas
+        for campo in (form.data_inicio, form.hora_inicio, form.data_fim, form.hora_fim):
+            campo.on_value_change(
+                lambda _: [revalidar() for revalidar in revalidadores]
+            )
+
+        _ = ui.button(
+            "Adicionar atividade", icon="add", on_click=adicionar_linha
+        ).props("flat dense no-caps")
+
+        def criar() -> None:
+            # validações de servidor: erros aparecem nos próprios campos
+            valores = coletar_valores(form)
+            if valores is None:
+                return
+
+            if not linhas:
+                ui.notify("Adicione pelo menos uma atividade.")
+                return
+
+            atividades: list[AtividadeFormValues] = []
+            for _, tema in linhas:
+                valores_linha = coletar_atividade(tema, form)
+                if valores_linha is None:
+                    return  # erro exibido nos campos da linha
+                atividades.append(valores_linha)
+
+            try:
+                evento = create_event(
+                    nome=valores.nome,
+                    descricao=valores.descricao,
+                    data_hora_inicio=valores.data_hora_inicio,
+                    data_hora_fim=valores.data_hora_fim,
+                    classificacao_indicativa=valores.classificacao_indicativa,
+                    vagas=valores.vagas,
+                    valor=valores.valor,
+                    latitude=valores.latitude,
+                    longitude=valores.longitude,
+                    banner=valores.banner,
+                    banner_thumbnail=valores.banner_thumbnail,
+                    activities=[
+                        ActivityInput(
+                            nome=a.nome,
+                            descricao=a.descricao,
+                            sala=a.sala,
+                            vagas=a.vagas,
+                            data_hora_inicio=a.data_hora_inicio,
+                            data_hora_fim=a.data_hora_fim,
+                        )
+                        for a in atividades
+                    ],
+                )
+            except DuplicateEventRegistration:
+                ui.notify("Já existe um evento com esse nome.")
+                return
+            except InvalidActivitySchedule:
+                ui.notify(
+                    "O horário de cada atividade precisa estar contido no do evento."
+                )
+                return
+            dialogo.close()
+            ao_sucesso(evento.id)
+
+        with ui.row().classes("w-full q-mt-md"):
+            _ = ui.space()
+            _ = ui.button("Cancelar", on_click=dialogo.close).props("flat")
+            _ = ui.button("Criar", on_click=criar).props("color=primary")
+
+    dialogo.open()
+
+
 @ui.page("/")
-def index_page(request: Request):
+def index_page(user: Annotated[User | None, Depends(get_optional_current_user)]):
+    header(user)
 
-    header(request)
+    eh_admin = user is not None and user.papel == "administrador"
 
-    _ = ui.label("Eventos").classes("text-h5 q-mt-md")
+    with ui.row().classes("w-full items-center q-mt-md"):
+        _ = ui.label("Eventos").classes("text-h5")
+        if eh_admin:
+            _ = ui.space()
+            _ = ui.button(
+                "Criar evento",
+                icon="add",
+                on_click=lambda: _dialogo_criar_evento(
+                    lambda evento_id: ui.navigate.to(f"/event/{evento_id}")
+                ),
+            ).props("color=primary")
 
     # 4 eventos por linha em telas largas; em telas menores o grid reduz as
     # colunas para os cards não ficarem espremidos
@@ -90,4 +241,4 @@ if __name__ in {
     "__main__",
     "__mp_main__",
 }:  # mp_main é necessário por que o nicegui usa multiprocessing
-    _ = ui.run(port=8000)
+    _ = ui.run(port=8000, storage_secret=settings.STORAGE_SECRET.get_secret_value())

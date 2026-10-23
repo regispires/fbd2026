@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import Annotated, override
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException
 from fastapi.params import Cookie
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import APIKeyCookie
@@ -98,13 +98,18 @@ class GerenciadorDeSessao(APIKeyCookie):
 cookie_manager = GerenciadorDeSessao()
 
 
-def get_optional_current_user(request: Request) -> User | None:
+def get_optional_current_user(
+    token: Annotated[str | None, Cookie(alias=COOKIE_NAME)] = None,
+) -> User | None:
     """
     Retorna o usuário autenticado **se** existir uma sessão válida;
     ``None`` caso contrário. Útil para páginas públicas que precisam
     saber o usuário logado para condicionar a interface.
+
+    O token vem do ``Cookie``, resolvido pelo FastAPI a cada requisição,
+    então a função pode ser usada como dependência
+    (``Annotated[User | None, Depends(get_optional_current_user)]``).
     """
-    token = request.cookies.get(COOKIE_NAME)
     if not token or not cookie_manager.verificar_sessao(token):
         return None
     user_id = get_user_id_by_session(hashlib.sha256(token.encode()).hexdigest())

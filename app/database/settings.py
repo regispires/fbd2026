@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     ENVIRONMENT: Literal["DEVELOPMENT", "PRODUCTION"]
     SESSION_DURATION_HOURS: timedelta = timedelta(hours=24)
 
+    # utilizado para parâmetros de sessão (diferente do cookie de autenticação)
+    STORAGE_SECRET: SecretStr
+
     @field_validator("SESSION_DURATION_HOURS", mode="before")
     @classmethod
     def _converter_duration(cls, value: object) -> object:

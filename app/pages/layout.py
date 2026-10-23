@@ -1,15 +1,15 @@
 """
-Elementos compartilhados entre as páginas (cabeçalho, badges, formatação de
-moeda, upload de comprovante, botão de voltar ao topo).
+Elementos compartilhados entre as páginas: o decorator ``page`` (registra
+cada rota e renderiza o cabeçalho único da aplicação), badges, formatação de
+moeda, upload de comprovante e botão de voltar ao topo.
 """
 
+import functools
 from collections.abc import Callable
+from typing import Any
 
-from fastapi import Request
-from nicegui import events, ui
-from nicegui.elements.upload_files import FileUpload
+from nicegui import app, events, ui
 
-from app.auth import get_optional_current_user
 from app.database.repository.user import User
 
 # status da inscrição -> cor do badge (cores padrão do Quasar)
@@ -23,6 +23,15 @@ STATUS_ROTULO = {
     "confirmada": "Confirmada",
     "cancelada": "Cancelada",
 }
+
+# chave da preferência de tema no ``app.storage.general``: escolha global da
+# aplicação (não por navegador), persistida em ``.nicegui/storage-general.json``
+CHAVE_TEMA = "tema_escuro"
+
+
+def _salvar_tema(evento: events.ValueChangeEventArguments[bool | None]) -> None:
+    """Guarda a preferência de tema da aplicação no storage compartilhado."""
+    app.storage.user[CHAVE_TEMA] = evento.value
 
 
 def formatar_moeda(valor: float) -> str:
@@ -89,18 +98,59 @@ def _sair() -> None:
     )
 
 
-def header(request: Request) -> None:
+def page(
+    path: str, *, with_header: bool = True, **ui_page_kwargs: Any
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """
+    Decorator que registra uma página da aplicação (uma volta sobre ``@ui.page``).
+
+    Além de criar a rota, renderiza o cabeçalho ``header`` **uma única vez por
+    página** em um ponto central: os construtores de página apenas montam o
+    conteúdo e nunca chamam o componente por si mesmos. O usuário exibido no
+    menu vem do parâmetro ``user`` declarado na função da página, com a
+    dependência FastAPI que cada página já resolve (``get_current_user``,
+    ``get_optional_current_user``); páginas sem esse parâmetro ganham o
+    cabeçalho de visitante (menu "Entrar"). ``with_header=False`` exclui a
+    única página dedicada que não o usa (login, tela cheia). Os demais
+    argumentos (``dependencies``, ``title``, ...) são repassados ao ``@ui.page``.
+    """
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @ui.page(path, **ui_page_kwargs)
+        @functools.wraps(func)
+        def build_page(*args: Any, **arguments: Any) -> Any:
+            if with_header:
+                header(arguments.get("user"))
+            return func(*args, **arguments)
+
+        return build_page
+
+    return decorator
+
+
+def header(user: User | None) -> None:
     """
     Cabeçalho com o título (link para a página inicial) e o menu do usuário.
 
-    As páginas que o usam podem ser públicas: o menu mostra "Minhas
-    inscrições" e "Sair" quando a requisição traz um cookie de sessão
-    válido, e "Entrar" caso contrário.
+    Não é chamado pelas páginas: o decorator ``page`` o renderiza uma única
+    vez para cada rota registrada da aplicação. O menu mostra "Minhas
+    inscrições" e "Sair" quando ``user`` é um usuário autenticado (páginas
+    privadas o declaram com ``Annotated[User, Depends(get_current_user)]``),
+    e "Entrar" caso contrário (páginas públicas usam ``User | None`` com
+    ``Depends(get_optional_current_user)``).
+
+    O tema escolhido no switch fica em ``app.storage.general``: preferência
+    global persistida da aplicação, revalidada a cada navegação/recarga.
     """
-    user: User | None = get_optional_current_user(request)
     with ui.header(bordered=True, elevated=True).style(
         "display: flex; align-items: center;"
     ):
+        # fora do ``ui.menu``: o conteúdo do menu só renderiza após a
+        # primeira abertura, e o elemento precisa existir na página desde o
+        # carregamento para aplicar a preferência salva no storage
+        dark = ui.dark_mode(
+            app.storage.user.get(CHAVE_TEMA, False), on_change=_salvar_tema
+        )
         _ = (
             ui.link("Exemplo FBD - Gestão de Eventos", "/")
             .classes("text-white no-underline")
@@ -114,16 +164,27 @@ def header(request: Request) -> None:
         ):
             with ui.menu_item("Tema Escuro", auto_close=False):
                 with ui.item_section().props("avatar"):
-                    dark_enabled = ui.dark_mode()
                     _ = ui.icon("dark_mode")
-                _ = ui.switch().bind_value(dark_enabled).props("dense color=accent")
+                _ = ui.switch().bind_value(dark).props("dense color=accent")
+
+            _ = ui.separator()
 
             if user is not None:
-                with ui.menu_item(
-                    "Minhas inscrições", on_click=lambda: ui.navigate.to("/user/events")
+                with (
+                    ui.menu_item(),
+                    ui.item_section().props("avatar"),
                 ):
-                    with ui.item_section().props("avatar"):
-                        _ = ui.icon("assignment")
+                    _ = ui.label(user.nome)
+
+                with (
+                    ui.menu_item(
+                        "Minhas inscrições",
+                        on_click=lambda: ui.navigate.to("/user/events"),
+                    ),
+                    ui.item_section().props("avatar"),
+                ):
+                    _ = ui.icon("assignment")
+
                 with (
                     ui.menu_item("Sair", on_click=_sair),
                     ui.item_section().props("avatar"),

@@ -9,7 +9,7 @@ Páginas das inscrições do usuário autenticado.
 
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends
 from nicegui import events, ui
 from nicegui.elements.upload_files import FileUpload
 
@@ -25,8 +25,8 @@ from app.exceptions import (
 )
 from app.pages.layout import (
     formatar_moeda,
-    header,
     meia_badge,
+    page,
     scroll_to_top,
     status_badge,
     upload_comprovante,
@@ -51,6 +51,7 @@ def _dialogo_edicao(event: Event, inscription: EventInscription) -> None:
         def file_change(e: events.UploadEventArguments):
             nonlocal arquivo
             arquivo = e.file
+            erro.visible = False
 
         if gratuita:
             _ = ui.label(
@@ -87,8 +88,10 @@ def _dialogo_edicao(event: Event, inscription: EventInscription) -> None:
                 (await arquivo.read()) if arquivo else inscription.comprovante_usuario
             )
             if event.valor > 0 and novo_comprovante is None:
-                ui.notify("É necessário um comprovante para inscrição paga.")
+                erro.set_text("É necessário um comprovante para inscrição paga.")
+                erro.visible = True
                 return
+            erro.visible = False
             try:
                 inscription.update(
                     meia=meia,
@@ -144,12 +147,8 @@ def _nao_encontrada() -> None:
 
 
 # página privada: exige sessão válida
-@ui.page("/user/events")
-def user_events_page(
-    request: Request, user: Annotated[User, Depends(get_current_user)]
-):
-    header(request)
-
+@page("/user/events")
+def user_events_page(user: Annotated[User, Depends(get_current_user)]):
     with ui.column().classes("w-full gap-4").style("max-width: 1000px; margin: 0 auto"):
         _ = ui.label("Minhas inscrições").classes("text-h5 q-mt-md")
 
@@ -195,14 +194,11 @@ def user_events_page(
     scroll_to_top()
 
 
-@ui.page("/user/registrations/{event_id}")
+@page("/user/registrations/{event_id}")
 def user_registration_page(
-    request: Request,
     event_id: int,
     user: Annotated[User, Depends(get_current_user)],
 ):
-    header(request)
-
     # somente o dono da inscrição pode ver a página
     inscription = get_inscription(user.id, event_id)
 

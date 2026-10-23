@@ -8,8 +8,9 @@ valor cheio ou meia-entrada e anexar o comprovante.
 """
 
 from datetime import datetime
+from typing import Annotated
 
-from fastapi import Request
+from fastapi import Depends
 from nicegui import events, ui
 from nicegui.elements.upload_files import FileUpload
 
@@ -24,11 +25,21 @@ from app.database.repository.user import User
 from app.exceptions import (
     AgeBelowClassification,
     DuplicateEventRegistration,
+    EventHasDependencies,
+    EventHasInscriptions,
     EventNotFound,
     InscriptionProofNotPdf,
+    InvalidActivitySchedule,
     NoMoreVacancy,
+    VacancyBelowInscriptions,
 )
-from app.pages.layout import formatar_moeda, header, scroll_to_top, upload_comprovante
+from app.pages.event_form import (
+    campos_evento,
+    coletar_valores,
+    conectar_validacao_evento,
+    valores_evento,
+)
+from app.pages.layout import formatar_moeda, page, scroll_to_top, upload_comprovante
 
 
 def _data_hora(dt: datetime) -> str:
@@ -139,6 +150,7 @@ def _dialogo_inscricao(event: Event, user: User) -> None:
     def file_change(e: events.UploadEventArguments):
         nonlocal arquivo
         arquivo = e.file
+        erro_comprovante.visible = False
 
     with ui.dialog() as dialogo, ui.card().classes("w-full").style("max-width: 500px"):
         _ = ui.label(f"Inscrever-se em {event.nome}").classes("text-h6")
@@ -162,10 +174,14 @@ def _dialogo_inscricao(event: Event, user: User) -> None:
             ).classes("text-caption text-grey-7")
 
             _ = upload_comprovante(on_upload=file_change)
+            erro_comprovante = ui.label(
+                "Anexe o comprovante em PDF para confirmar a inscrição."
+            ).classes("text-negative text-caption")
+            erro_comprovante.visible = False
 
         async def enviar() -> None:
             if not gratuita and not arquivo:
-                ui.notify("Anexe o comprovante antes de confirmar a inscrição.")
+                erro_comprovante.visible = True
                 return
             try:
                 _ = register_user_for_event(
@@ -247,11 +263,121 @@ def _secao_inscricao(event: Event, user: User | None) -> None:
         ).props("color=primary")
 
 
-# página pública: não exige login
-@ui.page("/event/{event_id}")
-def event_page(event_id: int, request: Request):
-    header(request)
+def _dialogo_editar_evento(event: Event) -> None:
+    """
+    Dialog administrativo de edição de evento, pré-preenchido.
 
+    O salvamento delega as regras de negócio ao ``Event.update``: vagas não
+    podem ficar abaixo das inscrições ativas e o novo horário precisa
+    continuar contendo as atividades existentes.
+    """
+    with ui.dialog() as dialogo, ui.card().classes("w-full").style("max-width: 900px"):
+        _ = ui.label(f"Editar {event.nome}").classes("text-h6")
+        form = campos_evento(valores_evento(event))
+        # validações de múltiplos campos (datas e lat/lng) exibidas inline
+        conectar_validacao_evento(form)
+        if (event.inscritas or 0) > 0:
+            _ = ui.label(
+                f"Evento com {event.inscritas} inscrição(ões) ativa(s): "
+                "as vagas não podem ficar abaixo desse número."
+            ).classes("text-caption text-grey-7")
+
+        def salvar() -> None:
+            # validações de servidor: erros aparecem nos próprios campos
+            valores = coletar_valores(form)
+            if valores is None:
+                return
+            try:
+                event.update(
+                    nome=valores.nome,
+                    descricao=valores.descricao,
+                    data_hora_inicio=valores.data_hora_inicio,
+                    data_hora_fim=valores.data_hora_fim,
+                    classificacao_indicativa=valores.classificacao_indicativa,
+                    vagas=valores.vagas,
+                    latitude=valores.latitude,
+                    longitude=valores.longitude,
+                    valor=valores.valor,
+                    banner=valores.banner,
+                    banner_thumbnail=valores.banner_thumbnail,
+                )
+            except VacancyBelowInscriptions:
+                ui.notify(
+                    "As vagas não podem ficar menores que o número de "
+                    "inscrições ativas.",
+                    type="negative",
+                )
+                return
+            except InvalidActivitySchedule:
+                ui.notify(
+                    "O novo horário precisa continuar contendo as atividades "
+                    "do evento.",
+                    type="negative",
+                )
+                return
+            except DuplicateEventRegistration:
+                ui.notify("Já existe um evento com esse nome.", type="negative")
+                return
+            dialogo.close()
+            ui.notify("Evento atualizado.", type="positive")
+            ui.navigate.to(f"/event/{event.id}")
+
+        with ui.row().classes("w-full q-mt-md"):
+            _ = ui.space()
+            _ = ui.button("Cancelar", on_click=dialogo.close).props("flat")
+            _ = ui.button("Salvar", on_click=salvar).props("color=primary")
+
+    dialogo.open()
+
+
+def _confirmar_exclusao(event: Event) -> None:
+    """
+    Dialog de confirmação da exclusão de um evento.
+
+    A exclusão é bloqueada quando o evento possui ao menos uma inscrição
+    (regra de negócio); sem inscrições, as atividades e os ministrantes são
+    excluídos junto.
+    """
+    with ui.dialog() as dialogo, ui.card().classes("w-full").style("max-width: 420px"):
+        _ = ui.label("Excluir este evento?").classes("text-h6")
+        _ = ui.label(
+            "As atividades e os ministrantes do evento também serão "
+            "excluídos. Esta ação não pode ser desfeita."
+        ).classes("text-body2 text-grey-7")
+
+        def confirmar() -> None:
+            try:
+                removido = event.delete()
+            except EventHasInscriptions:
+                ui.notify(
+                    "Este evento possui usuários inscritos e não pode ser excluído.",
+                    type="negative",
+                )
+                return
+            except EventHasDependencies:
+                ui.notify("Não foi possível excluir o evento.", type="negative")
+                return
+            if not removido:
+                ui.notify("Evento não encontrado.", type="warning")
+                return
+            dialogo.close()
+            ui.notify("Evento excluído.", type="positive")
+            ui.navigate.to("/")
+
+        with ui.row().classes("w-full q-mt-md"):
+            _ = ui.space()
+            _ = ui.button("Voltar", on_click=dialogo.close).props("flat")
+            _ = ui.button("Excluir", on_click=confirmar).props("color=negative")
+
+    dialogo.open()
+
+
+# página pública: não exige login
+@page("/event/{event_id}")
+def event_page(
+    event_id: int,
+    user: Annotated[User | None, Depends(get_optional_current_user)],
+):
     try:
         event = get_event(event_id)
     except EventNotFound:
@@ -261,11 +387,10 @@ def event_page(event_id: int, request: Request):
             _ = ui.link("Voltar para a lista de eventos", "/")
         return
 
-    user = get_optional_current_user(request)
     eh_admin = user is not None and user.papel == "administrador"
 
     with ui.column().classes("w-full gap-4").style("max-width: 1000px; margin: 0 auto"):
-        with ui.row().classes("w-full items-center"):
+        with ui.row().classes("w-full items-center gap-1"):
             _ = ui.link("← Eventos", "/").classes("text-primary")
             if eh_admin:
                 _ = ui.space()
@@ -281,9 +406,16 @@ def event_page(event_id: int, request: Request):
                 .style("aspect-ratio: 3 / 1")
             )
 
-        _ = ui.label(event.nome).classes("text-h4")
-        if event.descricao:
-            _ = ui.label(event.descricao).classes("text-body1")
+        with ui.row().classes("w-full items-center gap-1"):
+            _ = ui.label(event.nome).classes("text-h4")
+            _ = ui.space()
+            _ = ui.button(
+                "Editar",
+                icon="edit",
+                on_click=lambda: _dialogo_editar_evento(event),
+            ).props("flat dense no-caps")
+
+        _ = ui.label(event.descricao or "").classes("text-body1")
 
         _secao_inscricao(event, user)
 
@@ -296,5 +428,14 @@ def event_page(event_id: int, request: Request):
             _vagas(event)
             _valor(event)
             _localizacao(event)
+
+        with ui.row().classes("w-full items-center gap-1"):
+            _ = ui.space()
+            _ = ui.button(
+                "Excluir",
+                icon="delete",
+                on_click=lambda: _confirmar_exclusao(event),
+            ).props("dense no-caps color=negative ")
+            _ = ui.space()
 
     scroll_to_top()

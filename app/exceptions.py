@@ -122,6 +122,26 @@ class WrongEventActivityInscription(Exception):
     """
 
 
+class EventHasInscriptions(Exception):
+    """
+    O evento não pode ser excluído porque possui ao menos uma inscrição
+    registrada (de qualquer status, inclusive canceladas).
+    """
+
+
+class VacancyBelowInscriptions(Exception):
+    """
+    A operação reduziria as vagas do evento para um número menor que o de
+    inscrições ativas (não canceladas).
+    """
+
+
+class InvalidEventSchedule(Exception):
+    """
+    O horário de início do evento precisa ser anterior ao horário de fim.
+    """
+
+
 class EventHasDependencies(Exception):
     """
     O evento não pode ser excluído porque ainda possui atividades ou

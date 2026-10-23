@@ -8,6 +8,17 @@ trabalho da disciplina de Fundamentos de Bancos de Dados.
 Em [./docs/regras-de-negocio.md](./docs/regras-de-negocio.md) estão definidos os requisitos 
 funcionais da aplicação.
 
+## Configuração
+
+A conexão com o banco e outras opções da aplicação são definidas através de variáveis de ambiente.
+Para o ambiente local, crie um arquivo .env seguindo a estrutura de .env.example.
+
+O valor da variável STORAGE_SECRET pode ser gerado com o seguinte código python
+```python
+ import secrets
+ secrets.token_urlsafe(32)
+```
+
 ## Etapas
 
 ### Diagrama ER

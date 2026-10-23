@@ -15,9 +15,12 @@ from app.database.repository.activity import ActivityInput
 from app.exceptions import (
     DuplicateEventRegistration,
     EventHasDependencies,
+    EventHasInscriptions,
     EventNotFound,
     EventWithoutActivity,
     InvalidActivitySchedule,
+    InvalidEventSchedule,
+    VacancyBelowInscriptions,
 )
 
 
@@ -70,9 +73,41 @@ class Event:
         latitude: float | None,
         longitude: float | None,
         valor: float,
+        banner: str | None = None,
+        banner_thumbnail: str | None = None,
     ) -> None:
-        """Atualiza o evento; o par latitude/longitude segue a regra ambos ou nenhum."""
+        """
+        Atualiza o evento; o par latitude/longitude segue a regra ambos ou
+        nenhum. Regras validadas na mesma transação da escrita:
+
+        - o início precisa ser anterior ao fim (``InvalidEventSchedule``);
+        - as vagas não podem ficar menores que o número de inscrições ativas
+          (``VacancyBelowInscriptions``);
+        - o novo intervalo de datas precisa continuar contendo todas as
+          atividades existentes (``InvalidActivitySchedule``).
+
+        ``banner`` e ``banner_thumbnail`` são URLs; ``None`` limpa a coluna.
+        """
         _require_lat_lng_pair(latitude, longitude)
+        _require_valid_schedule(data_hora_inicio, data_hora_fim)
+        if vagas < 1:
+            raise ValueError("o evento precisa de pelo menos uma vaga")
+
+        inscritas_query = text(
+            """
+            SELECT COUNT(i.id_usuario) AS total
+            FROM inscricao_evento i
+            WHERE i.id_evento = :id
+              AND i.status <> 'cancelada'
+            """
+        )
+        atividades_query = text(
+            """
+            SELECT data_hora_inicio, data_hora_fim
+            FROM atividade
+            WHERE id_evento = :id
+            """
+        )
         query = text(
             """
             UPDATE evento
@@ -83,6 +118,8 @@ class Event:
                 classificacao_indicativa = :classificacao_indicativa,
                 vagas = :vagas,
                 valor = :valor,
+                banner = :banner,
+                banner_thumbnail = :banner_thumbnail,
                 localizacao = CASE
                     WHEN :latitude IS NOT NULL AND :longitude IS NOT NULL
                     THEN POINT(:longitude, :latitude)
@@ -91,8 +128,21 @@ class Event:
             WHERE id = :id
             """
         )
+        inicio = ensure_timezone(data_hora_inicio)
+        fim = ensure_timezone(data_hora_fim)
         with session_maker() as session:
             session.begin()
+            inscritas = session.execute(inscritas_query, {"id": self.id}).scalar_one()
+            if vagas < inscritas:
+                raise VacancyBelowInscriptions
+            for atividade in session.execute(
+                atividades_query, {"id": self.id}
+            ).mappings():
+                if (
+                    atividade["data_hora_inicio"] < inicio
+                    or atividade["data_hora_fim"] > fim
+                ):
+                    raise InvalidActivitySchedule
             try:
                 _ = session.execute(
                     query,
@@ -100,11 +150,13 @@ class Event:
                         "id": self.id,
                         "nome": nome,
                         "descricao": descricao,
-                        "data_hora_inicio": ensure_timezone(data_hora_inicio),
-                        "data_hora_fim": ensure_timezone(data_hora_fim),
+                        "data_hora_inicio": inicio,
+                        "data_hora_fim": fim,
                         "classificacao_indicativa": classificacao_indicativa,
                         "vagas": vagas,
                         "valor": valor,
+                        "banner": banner,
+                        "banner_thumbnail": banner_thumbnail,
                         "latitude": latitude,
                         "longitude": longitude,
                     },
@@ -117,14 +169,36 @@ class Event:
         """
         Exclui o evento, retornando ``True`` se uma linha foi removida.
 
-        A exclusão é bloqueada pelo banco (FK de ``atividade`` e
-        ``inscricao_evento``) quando há dependências, o que é traduzido para
-        ``EventHasDependencies``.
+        A exclusão é bloqueada quando o evento possui ao menos uma inscrição
+        (de qualquer status, ``EventHasInscriptions``). Sem inscrições, as
+        dependências do evento (presenças, ministrantes e atividades) são
+        removidas junto na mesma transação; uma violação de chave
+        estrangeira — p.ex. uma inscrição criada entre a verificação e a
+        exclusão — é traduzida para ``EventHasDependencies``.
         """
+        count_query = text(
+            """
+            SELECT COUNT(i.id_usuario) AS total
+            FROM inscricao_evento i
+            WHERE i.id_evento = :id
+            """
+        )
+        with session_maker() as session:
+            inscritas = session.execute(count_query, {"id": self.id}).scalar_one()
+        if inscritas > 0:
+            raise EventHasInscriptions
+
         query = text("DELETE FROM evento WHERE id = :id RETURNING id")
         with session_maker() as session:
             session.begin()
             try:
+                # ordem importa: presença e ministrantes referenciam
+                # atividades, que referenciam o evento
+                for table in ("presenca_atividade", "ministra_atividade", "atividade"):
+                    _ = session.execute(
+                        text(f"DELETE FROM {table} WHERE id_evento = :id"),
+                        {"id": self.id},
+                    )
                 result = session.execute(query, {"id": self.id})
             except IntegrityError as e:
                 raise EventHasDependencies from e
@@ -138,6 +212,14 @@ def _require_lat_lng_pair(latitude: float | None, longitude: float | None) -> No
         raise ValueError(
             "latitude e longitude precisam estar ambos definidos ou ambos nulos"
         )
+
+
+def _require_valid_schedule(
+    data_hora_inicio: datetime, data_hora_fim: datetime
+) -> None:
+    """O horário do evento precisa ter início anterior ao fim."""
+    if ensure_timezone(data_hora_inicio) >= ensure_timezone(data_hora_fim):
+        raise InvalidEventSchedule
 
 
 def _row_to_event(row: dict) -> Event:
@@ -169,8 +251,7 @@ class EventList:
         )
         with session_maker() as session:
             self.items = [
-                _row_to_event(dict(row))
-                for row in session.execute(query).mappings()
+                _row_to_event(dict(row)) for row in session.execute(query).mappings()
             ]
         self.on_change()
 
@@ -234,9 +315,7 @@ def get_event_raised_values(event_id: int) -> list[EventRaisedValue]:
     )
     with session_maker() as session:
         rows = session.execute(query, {"event_id": event_id}).mappings()
-    return [
-        EventRaisedValue(status=r["status"], total=float(r["total"])) for r in rows
-    ]
+    return [EventRaisedValue(status=r["status"], total=float(r["total"])) for r in rows]
 
 
 def create_event(
@@ -263,16 +342,20 @@ def create_event(
 
     ``nome`` é único no banco (violação vira ``DuplicateEventRegistration``);
     os ids das atividades são gerados pelo banco. A localização é opcional,
-    mas o par lat/lng deve vir inteiro ou não vir.
+    mas o par lat/lng deve vir inteiro ou não vir. O horário precisa ter
+    início anterior ao fim (``InvalidEventSchedule``) e o evento precisa de
+    pelo menos uma vaga.
     """
     _require_lat_lng_pair(latitude, longitude)
+    _require_valid_schedule(data_hora_inicio, data_hora_fim)
+    if vagas < 1:
+        raise ValueError("o evento precisa de pelo menos uma vaga")
     if not activities:
         raise EventWithoutActivity
     for activity in activities:
-        if (
-            ensure_timezone(activity.data_hora_inicio) < ensure_timezone(data_hora_inicio)
-            or ensure_timezone(activity.data_hora_fim) > ensure_timezone(data_hora_fim)
-        ):
+        if ensure_timezone(activity.data_hora_inicio) < ensure_timezone(
+            data_hora_inicio
+        ) or ensure_timezone(activity.data_hora_fim) > ensure_timezone(data_hora_fim):
             raise InvalidActivitySchedule
 
     event_query = text(

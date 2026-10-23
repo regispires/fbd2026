@@ -14,9 +14,12 @@ from fastapi import Request
 from nicegui import ui
 
 from app.auth import COOKIE_NAME, cookie_manager
+from app.pages.layout import page
 
 
-@ui.page("/login")
+# tela dedicada: sem o cabeçalho padrão da aplicação,
+# o formulário ocupa toda a altura
+@page("/login", with_header=False)
 def login_page(request: Request):
     # Se já existe uma sessão válida, não exibir o formulário
     cookie = request.cookies.get(COOKIE_NAME)
@@ -41,18 +44,29 @@ def login_page(request: Request):
         )
 
         email = (
-            ui.input("E-mail", autocomplete=["username"])
+            ui.input(
+                "E-mail *",
+                autocomplete=["username"],
+                validation={"Informe o e-mail.": lambda v: bool((v or "").strip())},
+            )
             .props("type=email")
             .classes("w-full q-mb-md")
         )
         senha = ui.input(
-            "Senha", password=True, autocomplete=["current-password"]
+            "Senha *",
+            password=True,
+            autocomplete=["current-password"],
+            validation={"Informe a senha.": lambda v: bool(v)},
         ).classes("w-full q-mb-md")
         erro = ui.label("E-mail ou senha inválidos").classes("text-negative q-mb-md")
         erro.visible = False
         entrar = ui.button("Entrar").props("filled color=primary").classes("w-full")
 
         async def enviar() -> None:
+            email_valido = email.validate()
+            senha_valida = senha.validate()
+            if not email_valido or not senha_valida:
+                return
             corpo = json.dumps({"email": email.value or "", "senha": senha.value or ""})
             entrar.disable()
             try:
