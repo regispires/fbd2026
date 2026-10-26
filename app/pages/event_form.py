@@ -19,6 +19,12 @@ Padronização dos formulários:
 O banner e o thumbnail são URLs informadas pelo administrador (não existe
 upload de arquivo). Datas e horários usam ``ui.date_input``/``ui.time_input``
 (dias em dia/mês/ano e horas em HH:MM) e são combinados em ``datetime`` na coleta.
+
+O seletor de ministrantes (``seletor_ministrantes``) também vive aqui: um
+multiselect de usuários e, para cada selecionado, os campos do vínculo
+(instituição obrigatória, mini-bio e Lattes opcionais) — reutilizado pelo
+dialog de criação de evento, pelo de criação de atividade e pelo de
+adição de ministrantes.
 """
 
 from collections.abc import Callable
@@ -29,8 +35,10 @@ from typing import Any
 from nicegui import ui
 from nicegui.elements.mixins.validation_element import ValidationElement
 
+from app.database.repository import ensure_timezone
+from app.database.repository.activity import Activity, LecturerInput
 from app.database.repository.event import Event
-
+from app.database.repository.user import User
 
 # classificação indicativa -> rótulo do select; None = sem restrição de idade
 # (em ui.select com dict, as chaves são os valores armazenados e os valores
@@ -45,7 +53,7 @@ CLASSIFICACOES = {
 }
 
 
-def _obrigatorio(valor: Any) -> bool:
+def obrigatorio(valor: Any) -> bool:
     """Regra de obrigatoriedade para o ``validation`` (aplica ``strip`` em texto)."""
     if isinstance(valor, str):
         return bool(valor.strip())
@@ -57,6 +65,38 @@ def _campo_data(label: str, value: str = "") -> ui.date_input:
     campo = ui.date_input(label, value=value)
     campo.picker.props('mask="DD/MM/YYYY"')
     return campo
+
+
+def _limitar_calendario(
+    campo: ui.date_input,
+    inicio_evento: datetime | None,
+    fim_evento: datetime | None,
+) -> None:
+    """
+    Restringe o calendário do ``date_input`` ao intervalo do evento (UX do
+    picker): ``options`` do QDate — função sobre datas no formato fixo
+    ``YYYY/MM/DD`` — e ``navigation-min/max-year-month`` (``YYYY/MM``) para
+    travar a navegação para meses fora do evento. Limites ausentes removem
+    as restrições (uso temporário enquanto o intervalo do evento não é
+    conhecido, no dialog de criação).
+
+    Restrição apenas de interface: a garantia de contenção continua sendo a
+    validação inline (``_conectar_atividade_com_limites``) e a checagem do
+    repositório na transação da escrita.
+    """
+    if inicio_evento is None or fim_evento is None:
+        _ = campo.picker.props(
+            remove=":options navigation-min-year-month navigation-max-year-month"
+        )
+        return
+    _ = campo.picker.props(
+        f":options=\"(date) => date >= '{inicio_evento.strftime('%Y/%m/%d')}'"
+        f" && date <= '{fim_evento.strftime('%Y/%m/%d')}'\""
+    )
+    _ = campo.picker.props(
+        f"navigation-min-year-month=\"{inicio_evento.strftime('%Y/%m')}\""
+        f" navigation-max-year-month=\"{fim_evento.strftime('%Y/%m')}\""
+    )
 
 
 @dataclass
@@ -138,6 +178,18 @@ def valores_evento(event: Event) -> EventFormValues:
     )
 
 
+def valores_atividade(activity: Activity) -> AtividadeFormValues:
+    """Converte uma ``Activity`` em valores para pré-preencher o formulário de edição."""
+    return AtividadeFormValues(
+        nome=activity.nome,
+        descricao=activity.descricao,
+        sala=activity.sala,
+        vagas=activity.vagas,
+        data_hora_inicio=activity.data_hora_inicio,
+        data_hora_fim=activity.data_hora_fim,
+    )
+
+
 def campos_evento(valores: EventFormValues | None = None) -> EventForm:
     """
     Renderiza os campos comuns de evento no container atual.
@@ -151,7 +203,7 @@ def campos_evento(valores: EventFormValues | None = None) -> EventForm:
         nome = ui.input(
             "Nome *",
             value=v.nome if v else "",
-            validation={"Informe o nome do evento.": _obrigatorio},
+            validation={"Informe o nome do evento.": obrigatorio},
         ).classes("w-full")
         descricao = ui.textarea(
             "Descrição", value=v.descricao or "" if v else ""
@@ -229,32 +281,56 @@ def campos_evento(valores: EventFormValues | None = None) -> EventForm:
     )
 
 
-def linha_atividade() -> ActivityForm:
-    """Renderiza os campos de uma atividade no container atual."""
+def linha_atividade(valores: AtividadeFormValues | None = None) -> ActivityForm:
+    """
+    Renderiza os campos de uma atividade no container atual.
+
+    ``valores`` pré-preenche os campos (edição); ``None`` usa valores
+    iniciais neutros (criação).
+    """
+    v = valores
+
     with ui.column().classes("w-full gap-2"):
         nome = ui.input(
             "Nome da atividade *",
-            validation={"Informe o nome da atividade.": _obrigatorio},
+            value=v.nome if v else "",
+            validation={"Informe o nome da atividade.": obrigatorio},
         ).classes("w-full")
-        descricao = ui.textarea("Descrição (opcional)").classes("w-full")
+        descricao = ui.textarea(
+            "Descrição (opcional)",
+            value=v.descricao or "" if v else "",
+        ).classes("w-full")
         with ui.row().classes("w-full gap-4 items-start"):
             sala = ui.input(
                 "Sala *",
-                validation={"Informe a sala da atividade.": _obrigatorio},
+                value=v.sala if v else "",
+                validation={"Informe a sala da atividade.": obrigatorio},
             ).classes("flex-grow")
             vagas = ui.number(
                 "Vagas *",
                 min=1,
-                value=10,
+                value=v.vagas if v else 10,
                 validation={
                     "A atividade precisa de pelo menos uma vaga.": lambda x: x is not None and x >= 1
                 },
             ).classes("w-28")
         with ui.row().classes("w-full gap-4 items-start"):
-            data_inicio = _campo_data("Data de início *").classes("flex-grow")
-            hora_inicio = ui.time_input("Hora de início *").classes("w-40")
-            data_fim = _campo_data("Data de fim *").classes("flex-grow")
-            hora_fim = ui.time_input("Hora de fim *").classes("w-40")
+            data_inicio = _campo_data(
+                "Data de início *",
+                v.data_hora_inicio.strftime("%d/%m/%Y") if v else "",
+            ).classes("flex-grow")
+            hora_inicio = ui.time_input(
+                "Hora de início *",
+                value=v.data_hora_inicio.strftime("%H:%M") if v else "",
+            ).classes("w-40")
+            data_fim = _campo_data(
+                "Data de fim *",
+                v.data_hora_fim.strftime("%d/%m/%Y") if v else "",
+            ).classes("flex-grow")
+            hora_fim = ui.time_input(
+                "Hora de fim *",
+                value=v.data_hora_fim.strftime("%H:%M") if v else "",
+            ).classes("w-40")
 
     return ActivityForm(
         nome=nome,
@@ -313,13 +389,24 @@ def conectar_validacao_evento(form: EventForm) -> None:
     form.longitude.on_value_change(lambda _: revalidar_lat_lng())
 
 
-def conectar_atividade(
-    atividade: ActivityForm, evento: EventForm
+def _conectar_atividade_com_limites(
+    atividade: ActivityForm,
+    limites: Callable[[], tuple[datetime | None, datetime | None]],
 ) -> Callable[[], None]:
     """
-    Liga as datas da atividade ao intervalo do evento: mudanças na
-    atividade ou no horário do evento reavaliam preenchimento, início
-    anterior ao fim e contenção no evento, exibindo os erros nos campos.
+    Liga as datas da atividade a um par de limites do evento **lido no
+    momento da validação**: mudanças na atividade reavaliam preenchimento,
+    início anterior ao fim e contenção no evento, exibindo os erros nos
+    campos.
+
+    ``limites`` devolve o intervalo do evento (``None`` enquanto não
+    preenchido), o que permite reutilizar a mesma validação no dialog de
+    criação (lida dos campos do evento) e no de edição (horários fixos do
+    evento carregado).
+
+    Os calendários dos campos de data também são restringidos ao intervalo
+    (props do QDate): reavaliar reaplica os limites, o que acompanha
+    intervalos dinâmicos (campos do evento no dialog de criação).
 
     Retorna o revalidator, para o dialog revalidar as linhas quando o
     horário do evento mudar.
@@ -331,7 +418,16 @@ def conectar_atividade(
         atividade.hora_fim,
     )
 
+    def limitar_calendarios() -> None:
+        """Aplica o intervalo corrente do evento aos pickers de data."""
+        inicio_evento, fim_evento = limites()
+        for campo in (atividade.data_inicio, atividade.data_fim):
+            _limitar_calendario(campo, inicio_evento, fim_evento)
+
+    limitar_calendarios()  # já na abertura (no dialog de edição os limites são fixos)
+
     def revalidar() -> None:
+        limitar_calendarios()
         inicio = _validar_extremo(
             atividade.data_inicio,
             atividade.hora_inicio,
@@ -354,14 +450,14 @@ def conectar_atividade(
             return
         mostrar_erro(atividade.data_fim, None)
 
-        inicio_evento = _ler_data_hora(
-            evento.data_inicio.value, evento.hora_inicio.value
-        )
-        fim_evento = _ler_data_hora(evento.data_fim.value, evento.hora_fim.value)
+        inicio_evento, fim_evento = limites()
         if (
             inicio_evento is not None
             and fim_evento is not None
-            and (inicio < inicio_evento or fim > fim_evento)
+            and (
+                ensure_timezone(inicio) < ensure_timezone(inicio_evento)
+                or ensure_timezone(fim) > ensure_timezone(fim_evento)
+            )
         ):
             mostrar_erro(
                 atividade.data_inicio,
@@ -377,6 +473,31 @@ def conectar_atividade(
     for campo in campos:
         campo.on_value_change(lambda _: revalidar())
     return revalidar
+
+
+def conectar_atividade(
+    atividade: ActivityForm, evento: EventForm
+) -> Callable[[], None]:
+    """
+    Liga as datas da atividade ao intervalo do formulário de evento (criação
+    conjunta: o dialog revalida as linhas quando o horário do evento mudar).
+    """
+
+    def limites() -> tuple[datetime | None, datetime | None]:
+        return (
+            _ler_data_hora(evento.data_inicio.value, evento.hora_inicio.value),
+            _ler_data_hora(evento.data_fim.value, evento.hora_fim.value),
+        )
+
+    return _conectar_atividade_com_limites(atividade, limites)
+
+
+def conectar_atividade_ao_evento(
+    atividade: ActivityForm, evento: Event
+) -> Callable[[], None]:
+    """Versão para o dialog de edição: limites fixos do evento já carregado."""
+    limites = (evento.data_hora_inicio, evento.data_hora_fim)
+    return _conectar_atividade_com_limites(atividade, lambda: limites)
 
 
 def coletar_valores(form: EventForm) -> EventFormValues | None:
@@ -430,12 +551,12 @@ def coletar_valores(form: EventForm) -> EventFormValues | None:
         form.latitude,
         form.longitude,
     )
-    if any(_campo_com_erro(campo) for campo in campos_com_erro):
+    if any(campo_com_erro(campo) for campo in campos_com_erro):
         return None
 
     return EventFormValues(
         nome=(form.nome.value or "").strip(),
-        descricao=_vazio_para_none(form.descricao.value),
+        descricao=vazio_para_none(form.descricao.value),
         data_hora_inicio=inicio,
         data_hora_fim=fim,
         classificacao_indicativa=form.classificacao.value,
@@ -443,17 +564,20 @@ def coletar_valores(form: EventForm) -> EventFormValues | None:
         valor=float(form.valor.value or 0),
         latitude=float(lat) if lat is not None else None,
         longitude=float(lng) if lng is not None else None,
-        banner=_vazio_para_none(form.banner.value),
-        banner_thumbnail=_vazio_para_none(form.banner_thumbnail.value),
+        banner=vazio_para_none(form.banner.value),
+        banner_thumbnail=vazio_para_none(form.banner_thumbnail.value),
     )
 
 
-def coletar_atividade(
-    form: ActivityForm, evento: EventForm
+def _coletar_atividade_com_limites(
+    form: ActivityForm,
+    limites: Callable[[], tuple[datetime | None, datetime | None]],
 ) -> AtividadeFormValues | None:
     """
-    Validação de servidor de uma linha de atividade, exibida nos próprios
-    campos (ver ``coletar_valores``). Devolve ``None`` quando inválido.
+    Validação de servidor de uma linha de atividade contra um intervalo de
+    evento **lido no momento da validação** (a reexecução das regras,
+    exibida nos próprios campos — ver ``coletar_valores``). Devolve ``None``
+    quando inválido.
     """
     form.nome.validate()
     form.sala.validate()
@@ -478,14 +602,14 @@ def coletar_atividade(
                 "O início da atividade precisa ser anterior ao fim.",
             )
         else:
-            inicio_evento = _ler_data_hora(
-                evento.data_inicio.value, evento.hora_inicio.value
-            )
-            fim_evento = _ler_data_hora(evento.data_fim.value, evento.hora_fim.value)
+            inicio_evento, fim_evento = limites()
             if (
                 inicio_evento is not None
                 and fim_evento is not None
-                and (inicio < inicio_evento or fim > fim_evento)
+                and (
+                    ensure_timezone(inicio) < ensure_timezone(inicio_evento)
+                    or ensure_timezone(fim) > ensure_timezone(fim_evento)
+                )
             ):
                 mostrar_erro(
                     form.data_inicio,
@@ -508,17 +632,46 @@ def coletar_atividade(
         form.data_fim,
         form.hora_fim,
     )
-    if any(_campo_com_erro(campo) for campo in campos_com_erro):
+    if any(campo_com_erro(campo) for campo in campos_com_erro):
         return None
 
     return AtividadeFormValues(
         nome=(form.nome.value or "").strip(),
-        descricao=_vazio_para_none(form.descricao.value),
+        descricao=vazio_para_none(form.descricao.value),
         sala=(form.sala.value or "").strip(),
         vagas=int(form.vagas.value or 0),
         data_hora_inicio=inicio,
         data_hora_fim=fim,
     )
+
+
+def coletar_atividade(
+    form: ActivityForm, evento: EventForm
+) -> AtividadeFormValues | None:
+    """
+    Validação de servidor de uma linha de atividade, exibida nos próprios
+    campos (ver ``coletar_valores``). Devolve ``None`` quando inválido.
+    """
+
+    def limites() -> tuple[datetime | None, datetime | None]:
+        return (
+            _ler_data_hora(evento.data_inicio.value, evento.hora_inicio.value),
+            _ler_data_hora(evento.data_fim.value, evento.hora_fim.value),
+        )
+
+    return _coletar_atividade_com_limites(form, limites)
+
+
+def coletar_dados_atividade(
+    form: ActivityForm, evento: Event
+) -> AtividadeFormValues | None:
+    """
+    Validação de servidor de uma atividade **existente** (dialog de edição),
+    contra os horários fixos do evento carregado. Devolve ``None`` quando
+    inválido.
+    """
+    limites = (evento.data_hora_inicio, evento.data_hora_fim)
+    return _coletar_atividade_com_limites(form, lambda: limites)
 
 
 def mostrar_erro(campo: Any, mensagem: str | None) -> None:
@@ -533,7 +686,7 @@ def mostrar_erro(campo: Any, mensagem: str | None) -> None:
     campo._props["error-message"] = mensagem or ""
 
 
-def _campo_com_erro(campo: Any) -> bool:
+def campo_com_erro(campo: Any) -> bool:
     """Campo com erro: mensagem definida (ValidationElement) ou prop de erro."""
     if isinstance(campo, ValidationElement):
         return campo.error is not None
@@ -581,7 +734,108 @@ def _ler_data_hora(data: str | None, hora: str | None) -> datetime | None:
     return datetime.combine(dia, horario)
 
 
-def _vazio_para_none(texto: str | None) -> str | None:
+def vazio_para_none(texto: str | None) -> str | None:
     """Entradas de texto vazias viram ``None`` (colunas anuláveis)."""
     texto = (texto or "").strip()
     return texto or None
+
+
+@dataclass
+class CamposMinistrante:
+    """Campos do vínculo de um ministrante selecionado no seletor."""
+
+    user: User
+    instituicao: ui.input
+    mini_bio: ui.textarea
+    link_lattes: ui.input
+
+
+@dataclass
+class SeletorMinistrantes:
+    """
+    Componente reutilizável de seleção de ministrantes: um multiselect de
+    usuários e, para cada selecionado, os campos do vínculo (instituição
+    obrigatória, mini-bio e Lattes opcionais).
+    """
+
+    select: ui.select
+    usuarios: list[User]
+    campos: dict[int, CamposMinistrante]
+
+    def coletar(self) -> list[LecturerInput] | None:
+        """
+        Validação de servidor do seletor (a reexecução das regras, exibida
+        nos próprios campos): exige ao menos um usuário selecionado e a
+        instituição de cada um. Devolve ``None`` quando inválido.
+        """
+        self.select.validate()
+        valido = bool(self.select.value or [])
+        for campos in self.campos.values():
+            campos.instituicao.validate()
+            if campo_com_erro(campos.instituicao):
+                valido = False
+        if not valido:
+            return None
+        return [
+            LecturerInput(
+                user=campos.user,
+                mini_bio=vazio_para_none(campos.mini_bio.value),
+                instituicao=(campos.instituicao.value or "").strip(),
+                link_lattes=vazio_para_none(campos.link_lattes.value),
+            )
+            for campos in self.campos.values()
+        ]
+
+
+def seletor_ministrantes(usuarios: list[User]) -> SeletorMinistrantes:
+    """
+    Renderiza o seletor de ministrantes no container atual.
+
+    ``usuarios`` são os candidatos (a chamadora já filtra quem não pode,
+    ex.: os que ministram a atividade). A seleção de cada usuário revela
+    um card com os campos do vínculo; ``coletar`` devolve os
+    ``LecturerInput`` validados.
+    """
+    por_id = {u.id: u for u in usuarios}
+    campos: dict[int, CamposMinistrante] = {}
+
+    with ui.column().classes("w-full gap-2"):
+        select = ui.select(
+            {u.id: f"{u.nome} — {u.email}" for u in usuarios},
+            multiple=True,
+            label="Ministrantes *",
+            validation={"Selecione pelo menos um ministrante.": lambda v: bool(v)},
+        ).classes("w-full")
+        cartoes = ui.column().classes("w-full gap-2")
+
+        def reconstruir() -> None:
+            campos.clear()
+            cartoes.clear()
+            with cartoes:
+                for user_id in select.value or []:
+                    user = por_id[user_id]
+                    with (
+                        ui.card().classes("w-full"),
+                        ui.column().classes("w-full gap-2"),
+                    ):
+                            _ = ui.label(user.nome).classes("text-subtitle2")
+                            instituicao = ui.input(
+                                "Instituição *",
+                                validation={"Informe a instituição.": obrigatorio},
+                            ).classes("w-full")
+                            mini_bio = ui.textarea("Mini-bio (opcional)").classes(
+                                "w-full"
+                            )
+                            link_lattes = ui.input("Link do Lattes (opcional)").classes(
+                                "w-full"
+                            )
+                            campos[user_id] = CamposMinistrante(
+                                user=user,
+                                instituicao=instituicao,
+                                mini_bio=mini_bio,
+                                link_lattes=link_lattes,
+                            )
+
+        select.on_value_change(lambda _: reconstruir())
+
+    return SeletorMinistrantes(select=select, usuarios=usuarios, campos=campos)

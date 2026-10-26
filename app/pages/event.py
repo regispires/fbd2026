@@ -94,7 +94,10 @@ def _horario_atividade(activity: Activity) -> str:
 
 def _activity_card(activity: Activity) -> None:
     with ui.card().classes("w-full"), ui.column().classes("w-full gap-2"):
-        _ = ui.label(activity.nome).classes("text-h6")
+        _ = ui.link(
+            activity.nome,
+            f"/event/{activity.id_evento}/activities/{activity.id}",
+        ).classes("text-h6 text-weight-medium no-underline text-inherit")
         with ui.row().classes("items-center gap-x-6 gap-y-1 text-grey-8"):
             for icon, texto in (
                 ("schedule", _horario_atividade(activity)),
@@ -127,7 +130,13 @@ def _activity_card(activity: Activity) -> None:
 
 def _atividades(event_id: int) -> None:
     activities = get_event_activities(event_id)
-    _ = ui.label("Atividades").classes("text-h5 q-mt-md")
+    with ui.row().classes("w-full items-center"):
+        _ = ui.label("Atividades").classes("text-h5")
+        _ = ui.space()
+        _ = ui.link(
+            "Ver todas as atividades",
+            f"/event/{event_id}/activities",
+        ).props("flat dense no-caps color=primary")
     if not activities:
         _ = ui.label("Nenhuma atividade cadastrada.").classes("text-grey-7")
         return

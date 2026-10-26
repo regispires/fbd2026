@@ -3,7 +3,7 @@ Operações sobre atividades e os ministrantes.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from sqlalchemy import text
@@ -17,6 +17,7 @@ from app.exceptions import (
     ActivityHasDependencies,
     ActivityNotFound,
     ActivityWithoutLecturer,
+    DuplicateLecturer,
     EventNotFound,
     InvalidActivitySchedule,
 )
@@ -89,7 +90,8 @@ class ActivityInput:
 
     Espelha as colunas de ``atividade`` sem as chaves (``id`` é gerado pelo
     banco e ``id_evento`` é o do evento criado); a validação de que o horário
-    está contido no do evento é feita no ``create_event``.
+    está contido no do evento é feita no ``create_event``. A regra de negócio
+    exige ao menos um ministrante por atividade.
     """
 
     nome: str
@@ -98,6 +100,7 @@ class ActivityInput:
     vagas: int
     data_hora_inicio: datetime
     data_hora_fim: datetime
+    lecturers: list[LecturerInput] = field(default_factory=list)
 
 
 @dataclass
@@ -110,15 +113,15 @@ class ActivityPreview:
     sala: str
     data_hora_inicio: datetime
     data_hora_fim: datetime
+    vagas: int
 
 
 @dataclass
 class Activity(ActivityPreview):
-    """Atividade completa, incluindo a descrição, as vagas e os ministrantes."""
+    """Atividade completa, incluindo a descrição e os ministrantes."""
 
     lecturers: list[Lecturer]
     descricao: str | None
-    vagas: int
 
     def update(
         self,
@@ -169,6 +172,12 @@ class Activity(ActivityPreview):
         _ensure_inside_event(session, self.id_evento, data_hora_inicio, data_hora_fim)
 
     def add_lecturers(self, entries: list[LecturerInput]) -> None:
+        """
+        Adiciona ministrantes à atividade.
+
+        O mesmo usuário não pode ministrar a atividade duas vezes (PK);
+        violação vira ``DuplicateLecturer``.
+        """
         query = text(
             """
             INSERT INTO ministra_atividade
@@ -179,18 +188,21 @@ class Activity(ActivityPreview):
         )
         with session_maker() as session:
             session.begin()
-            for entry in entries:
-                _ = session.execute(
-                    query,
-                    {
-                        "id_usuario": entry.user.id,
-                        "id_evento": self.id_evento,
-                        "id_atividade": self.id,
-                        "mini_bio": entry.mini_bio,
-                        "instituicao": entry.instituicao,
-                        "link_lattes": entry.link_lattes,
-                    },
-                )
+            try:
+                for entry in entries:
+                    _ = session.execute(
+                        query,
+                        {
+                            "id_usuario": entry.user.id,
+                            "id_evento": self.id_evento,
+                            "id_atividade": self.id,
+                            "mini_bio": entry.mini_bio,
+                            "instituicao": entry.instituicao,
+                            "link_lattes": entry.link_lattes,
+                        },
+                    )
+            except IntegrityError as e:
+                raise DuplicateLecturer from e
             session.commit()
 
     def remove_lecturer(self, user_id: int) -> bool:
@@ -276,6 +288,59 @@ class Activity(ActivityPreview):
             )
             session.commit()
 
+    def delete(self) -> bool:
+        """
+        Exclui a atividade, retornando ``True`` se uma linha foi removida.
+
+        A exclusão é bloqueada quando a atividade já possui presenças
+        registradas (regra: atividades não podem ser removidas depois de
+        receberem presença, ``ActivityHasDependencies``); sem presenças, os
+        vínculos de ministrantes são removidos junto, na mesma transação.
+        """
+        count_query = text(
+            """
+            SELECT COUNT(id_usuario) AS total
+            FROM presenca_atividade
+            WHERE id_evento = :id_evento AND id_atividade = :id
+            """
+        )
+        with session_maker() as session:
+            presencas = session.execute(
+                count_query, {"id_evento": self.id_evento, "id": self.id}
+            ).scalar_one()
+        if presencas > 0:
+            raise ActivityHasDependencies
+
+        delete_query = text(
+            """
+            DELETE FROM atividade
+            WHERE id = :id AND id_evento = :id_evento
+            RETURNING id
+            """
+        )
+        with session_maker() as session:
+            session.begin()
+            try:
+                # ordem importa: ministrantes referenciam a atividade, então
+                # os vínculos saem antes da própria atividade
+                _ = session.execute(
+                    text(
+                        """
+                        DELETE FROM ministra_atividade
+                        WHERE id_evento = :id_evento AND id_atividade = :id
+                        """
+                    ),
+                    {"id_evento": self.id_evento, "id": self.id},
+                )
+                result = session.execute(
+                    delete_query, {"id": self.id, "id_evento": self.id_evento}
+                )
+            except IntegrityError as e:
+                # corrida: presença registrada entre a contagem e a exclusão
+                raise ActivityHasDependencies from e
+            session.commit()
+            return result.rowcount == 1
+
 
 @dataclass
 class ActivityList:
@@ -301,7 +366,7 @@ class ActivityList:
         query = text(
             """
             SELECT a.id_evento, a.id, a.nome, a.sala,
-                   a.data_hora_inicio, a.data_hora_fim
+                   a.data_hora_inicio, a.data_hora_fim, a.vagas
             FROM atividade a
             WHERE a.id_evento = :id_evento
             ORDER BY a.id
@@ -328,11 +393,18 @@ class ActivityList:
         vagas: int,
         data_hora_inicio: datetime,
         data_hora_fim: datetime,
+        lecturers: list[LecturerInput],
     ) -> Activity:
         """
-        Cria a atividade (o ``id`` é gerado pelo banco), validando o
-        intervalo do evento na mesma transação da escrita.
+        Cria a atividade e seus ministrantes na mesma transação.
+
+        O ``id`` é gerado pelo banco; o horário precisa estar contido no do
+        evento (``InvalidActivitySchedule``) e a regra de negócio exige ao
+        menos um ministrante (``ActivityWithoutLecturer``). O mesmo usuário
+        não pode ministrar a atividade duas vezes (``DuplicateLecturer``).
         """
+        if not lecturers:
+            raise ActivityWithoutLecturer
         query = text(
             """
             INSERT INTO atividade
@@ -342,6 +414,14 @@ class ActivityList:
                  :data_hora_inicio, :data_hora_fim)
             RETURNING id_evento, id, nome, sala, data_hora_inicio, data_hora_fim,
                      descricao, vagas
+            """
+        )
+        lecturer_query = text(
+            """
+            INSERT INTO ministra_atividade
+                (id_usuario, id_evento, id_atividade, mini_bio, instituicao, link_lattes)
+            VALUES
+                (:id_usuario, :id_evento, :id_atividade, :mini_bio, :instituicao, :link_lattes)
             """
         )
         with session_maker() as session:
@@ -359,22 +439,32 @@ class ActivityList:
                     "data_hora_fim": ensure_timezone(data_hora_fim),
                 },
             )
+            # consome o RETURNING antes de executar as demais statements na
+            # mesma conexão (o cursor não aceita outra query com resultado
+            # pendente)
+            row = dict(result.mappings().first())
+            try:
+                for entry in lecturers:
+                    _ = session.execute(
+                        lecturer_query,
+                        {
+                            "id_usuario": entry.user.id,
+                            "id_evento": event_id,
+                            "id_atividade": row["id"],
+                            "mini_bio": entry.mini_bio,
+                            "instituicao": entry.instituicao,
+                            "link_lattes": entry.link_lattes,
+                        },
+                    )
+            except IntegrityError as e:
+                raise DuplicateLecturer from e
             session.commit()
-            row = result.mappings().first()
         self.on_change()
-        return Activity(lecturers=[], **dict(row))
+        return Activity(lecturers=get_lecturers(row["id_evento"], row["id"]), **row)
 
     def delete_activity(self, activity_id: int) -> bool:
         """Exclui a atividade pelo id; retorna ``True`` se algo foi removido."""
-        query = text("DELETE FROM atividade WHERE id = :id RETURNING id")
-        with session_maker() as session:
-            session.begin()
-            try:
-                result = session.execute(query, {"id": activity_id})
-            except IntegrityError as e:
-                raise ActivityHasDependencies from e
-            session.commit()
-            deleted = result.rowcount == 1
+        deleted = delete_activity(activity_id)
         if deleted:
             self.on_change()
         return deleted
@@ -408,6 +498,18 @@ def get_activity(activity_id: int, event_id: int | None = None) -> Activity:
     detail = Activity(lecturers=[], **base)
     detail.lecturers = get_lecturers(event_id or base["id_evento"], activity_id)
     return detail
+
+
+def delete_activity(activity_id: int) -> bool:
+    """
+    Exclui uma atividade, retornando ``True`` se uma linha foi removida.
+
+    A exclusão é bloqueada quando a atividade já possui presenças
+    registradas (``ActivityHasDependencies``); os vínculos de ministrantes
+    são removidos junto. ``ActivityNotFound`` se a atividade não existir.
+    """
+    activity = get_activity(activity_id)
+    return activity.delete()
 
 
 def get_lecturers(event_id: int, activity_id: int) -> list[Lecturer]:

@@ -341,6 +341,41 @@ def get_participants(event_id: int) -> list[User]:
     ]
 
 
+def get_activity_attendance(event_id: int, activity_id: int) -> list[User]:
+    """
+    Usuários com presença registrada em uma atividade — para exibir os
+    presentes e filtrar quem ainda pode recebê-la (a PK da
+    ``presenca_atividade`` garante uma presença por usuário, então a
+    interface só oferece os que não estão nesta lista).
+    """
+    query = text(
+        """
+        SELECT v.id, v.nome, v.cpf::text, v.email, v.data_nascimento,
+               v.papel, v.idade::int
+        FROM presenca_atividade p
+        JOIN usuario_com_idade v ON v.id = p.id_usuario
+        WHERE p.id_evento = :event_id AND p.id_atividade = :activity_id
+        ORDER BY v.nome
+        """
+    )
+    with session_maker() as session:
+        rows = session.execute(
+            query, {"event_id": event_id, "activity_id": activity_id}
+        ).mappings()
+    return [
+        User(
+            id=r["id"],
+            nome=r["nome"],
+            cpf=r["cpf"],
+            email=r["email"],
+            data_nascimento=r["data_nascimento"],
+            papel=r["papel"],
+            idade=r["idade"],
+        )
+        for r in rows
+    ]
+
+
 # --- Helpers internos -------------------------------------------------------
 
 

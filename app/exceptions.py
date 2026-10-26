@@ -46,6 +46,13 @@ class AttendanceNotFound(Exception):
     """
 
 
+class DuplicateLecturer(Exception):
+    """
+    O usuário já é ministrante da atividade (violação da PK composta da
+    ``ministra_atividade``).
+    """
+
+
 class InscriptionNotPending(Exception):
     """
     A operação exige que a inscrição ainda esteja ``pendente`` (ex.: editar
@@ -151,8 +158,9 @@ class EventHasDependencies(Exception):
 
 class ActivityHasDependencies(Exception):
     """
-    A atividade não pode ser excluída porque ainda possui presenças ou
-    ministrantes vinculados.
+    A atividade não pode ser excluída porque já possui presenças
+    registradas (regra: atividades não podem ser removidas depois de
+    receberem presença). Os vínculos de ministrantes são removidos junto.
     """
 
 

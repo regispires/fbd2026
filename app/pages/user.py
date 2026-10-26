@@ -190,6 +190,10 @@ def user_events_page(user: Annotated[User, Depends(get_current_user)]):
                         "Detalhes",
                         f"/user/registrations/{inscription.event_id}",
                     ).props("flat dense no-caps color=primary")
+                    _ = ui.link(
+                        "Presenças",
+                        f"/user/events/{inscription.event_id}/attendances",
+                    ).props("flat dense no-caps color=primary")
 
     scroll_to_top()
 
@@ -294,5 +298,71 @@ def user_registration_page(
                     _ = ui.label(
                         "Inscrição cancelada — não é possível reativá-la."
                     ).classes("text-caption text-grey-7")
+
+    scroll_to_top()
+
+
+def _evento_nao_encontrado() -> None:
+    with ui.column().classes("w-full items-center q-mt-xl"):
+        _ = ui.icon("event_busy", size="64px").classes("text-grey-6")
+        _ = ui.label("Evento não encontrado").classes("text-h6")
+        _ = ui.link("Voltar para minhas inscrições", "/user/events")
+
+
+# página privada: exige sessão válida
+@page("/user/events/{event_id}/attendances")
+def user_event_attendances_page(
+    event_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Presenças do usuário em um evento (regra de negócio): lista as
+    atividades em que ele esteve presente, marcadas por um administrador.
+    """
+    try:
+        event = get_event(event_id)
+    except EventNotFound:
+        _evento_nao_encontrado()
+        return
+
+    presencas = user.get_attendances(event_id)
+
+    with ui.column().classes("w-full gap-4").style("max-width: 1000px; margin: 0 auto"):
+        _ = ui.link(f"← {event.nome}", f"/user/registrations/{event_id}").classes(
+            "text-primary"
+        )
+
+        _ = ui.label("Minhas presenças").classes("text-h5 q-mt-md")
+
+        if not presencas:
+            with (
+                ui.card().classes("w-full"),
+                ui.column().classes("w-full gap-2 items-center"),
+            ):
+                _ = ui.icon("event_note", size="48px").classes("text-grey-5")
+                _ = ui.label(
+                    "Você não tem presenças registradas neste evento."
+                ).classes("text-grey-7")
+                _ = ui.link("Ver evento", f"/event/{event.id}").props(
+                    "flat dense no-caps color=primary"
+                )
+        else:
+            for presenca in presencas:
+                with (
+                    ui.card().classes("w-full"),
+                    ui.row().classes("w-full items-center gap-3"),
+                ):
+                    _ = ui.icon("event_available", size="24px").classes(
+                        "text-positive"
+                    )
+                    with ui.column().classes("gap-0 flex-grow"):
+                        _ = ui.label(presenca.activity_nome).classes("text-subtitle1")
+                        _ = ui.label(f"Sala {presenca.sala}").classes(
+                            "text-caption text-grey-7"
+                        )
+                    _ = ui.link(
+                        "Ver atividade",
+                        f"/event/{presenca.event_id}/activities/{presenca.id_atividade}",
+                    ).props("flat dense no-caps color=primary")
 
     scroll_to_top()

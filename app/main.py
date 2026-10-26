@@ -11,18 +11,24 @@ from app import (
 from app.auth import get_optional_current_user
 from app.database.repository.activity import ActivityInput
 from app.database.repository.event import Event, EventList, create_event
-from app.database.repository.user import User
+from app.database.repository.user import User, get_users
 from app.database.settings import settings
-from app.exceptions import DuplicateEventRegistration, InvalidActivitySchedule
+from app.exceptions import (
+    ActivityWithoutLecturer,
+    DuplicateEventRegistration,
+    DuplicateLecturer,
+    InvalidActivitySchedule,
+)
 from app.pages.event_form import (
     ActivityForm,
-    AtividadeFormValues,
+    SeletorMinistrantes,
     campos_evento,
     coletar_atividade,
     coletar_valores,
     conectar_atividade,
     conectar_validacao_evento,
     linha_atividade,
+    seletor_ministrantes,
 )
 from app.pages.layout import formatar_moeda, header
 
@@ -80,11 +86,12 @@ def _dialogo_criar_evento(ao_sucesso: Callable[[int], None]) -> None:
 
     O evento precisa ter pelo menos uma atividade (regra de negócio), então
     o dialog também lista as atividades a criar; cada uma precisa estar
-    contida no horário do evento. Ao concluir, ``ao_sucesso`` recebe o id
-    do evento criado.
+    contida no horário do evento e ter ao menos um ministrante. Ao concluir,
+    ``ao_sucesso`` recebe o id do evento criado.
     """
-    linhas: list[tuple[ui.card, ActivityForm]] = []
+    linhas: list[tuple[ui.card, ActivityForm, SeletorMinistrantes]] = []
     revalidadores: list[Callable[[], None]] = []
+    usuarios = get_users()
 
     with ui.dialog() as dialogo, ui.card().classes("w-full").style("max-width: 900px"):
         _ = ui.label("Criar evento").classes("text-h6")
@@ -105,7 +112,11 @@ def _dialogo_criar_evento(ao_sucesso: Callable[[int], None]) -> None:
                 card = ui.card().classes("w-full")
                 with card:
                     tema = linha_atividade()
-            entrada = (card, tema)
+                    _ = ui.label("Ministrantes (pelo menos um)").classes(
+                        "text-caption text-grey-7 q-mt-sm"
+                    )
+                    seletor = seletor_ministrantes(usuarios)
+            entrada = (card, tema, seletor)
 
             def remover() -> None:
                 linhas.remove(entrada)
@@ -144,12 +155,25 @@ def _dialogo_criar_evento(ao_sucesso: Callable[[int], None]) -> None:
                 ui.notify("Adicione pelo menos uma atividade.")
                 return
 
-            atividades: list[AtividadeFormValues] = []
-            for _, tema in linhas:
+            atividades: list[ActivityInput] = []
+            for _, tema, seletor in linhas:
                 valores_linha = coletar_atividade(tema, form)
                 if valores_linha is None:
                     return  # erro exibido nos campos da linha
-                atividades.append(valores_linha)
+                ministrantes = seletor.coletar()
+                if ministrantes is None:
+                    return  # erro exibido no seletor da linha
+                atividades.append(
+                    ActivityInput(
+                        nome=valores_linha.nome,
+                        descricao=valores_linha.descricao,
+                        sala=valores_linha.sala,
+                        vagas=valores_linha.vagas,
+                        data_hora_inicio=valores_linha.data_hora_inicio,
+                        data_hora_fim=valores_linha.data_hora_fim,
+                        lecturers=ministrantes,
+                    )
+                )
 
             try:
                 evento = create_event(
@@ -164,17 +188,7 @@ def _dialogo_criar_evento(ao_sucesso: Callable[[int], None]) -> None:
                     longitude=valores.longitude,
                     banner=valores.banner,
                     banner_thumbnail=valores.banner_thumbnail,
-                    activities=[
-                        ActivityInput(
-                            nome=a.nome,
-                            descricao=a.descricao,
-                            sala=a.sala,
-                            vagas=a.vagas,
-                            data_hora_inicio=a.data_hora_inicio,
-                            data_hora_fim=a.data_hora_fim,
-                        )
-                        for a in atividades
-                    ],
+                    activities=atividades,
                 )
             except DuplicateEventRegistration:
                 ui.notify("Já existe um evento com esse nome.")
@@ -183,6 +197,12 @@ def _dialogo_criar_evento(ao_sucesso: Callable[[int], None]) -> None:
                 ui.notify(
                     "O horário de cada atividade precisa estar contido no do evento."
                 )
+                return
+            except ActivityWithoutLecturer:
+                ui.notify("Cada atividade precisa de pelo menos um ministrante.")
+                return
+            except DuplicateLecturer:
+                ui.notify("Um usuário não pode ministrar a mesma atividade duas vezes.")
                 return
             dialogo.close()
             ao_sucesso(evento.id)

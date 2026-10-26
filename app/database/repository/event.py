@@ -13,7 +13,9 @@ from app.database import session_maker
 from app.database.repository import ensure_timezone, parse_point
 from app.database.repository.activity import ActivityInput
 from app.exceptions import (
+    ActivityWithoutLecturer,
     DuplicateEventRegistration,
+    DuplicateLecturer,
     EventHasDependencies,
     EventHasInscriptions,
     EventNotFound,
@@ -338,7 +340,9 @@ def create_event(
     Um evento precisa ter pelo menos uma atividade (regra de negócio);
     ``activities`` vazia ou ``None`` levanta ``EventWithoutActivity``. O
     horário de cada atividade deve estar contido no horário do evento
-    (``InvalidActivitySchedule``).
+    (``InvalidActivitySchedule``) e cada atividade precisa de ao menos um
+    ministrante (``ActivityWithoutLecturer``); os vínculos de ministrantes
+    são criados na mesma transação.
 
     ``nome`` é único no banco (violação vira ``DuplicateEventRegistration``);
     os ids das atividades são gerados pelo banco. A localização é opcional,
@@ -352,6 +356,8 @@ def create_event(
         raise ValueError("o evento precisa de pelo menos uma vaga")
     if not activities:
         raise EventWithoutActivity
+    if any(not activity.lecturers for activity in activities):
+        raise ActivityWithoutLecturer
     for activity in activities:
         if ensure_timezone(activity.data_hora_inicio) < ensure_timezone(
             data_hora_inicio
@@ -384,6 +390,15 @@ def create_event(
         VALUES
             (:id_evento, :nome, :descricao, :sala, :vagas,
              :data_hora_inicio, :data_hora_fim)
+        RETURNING id
+        """
+    )
+    lecturer_query = text(
+        """
+        INSERT INTO ministra_atividade
+            (id_usuario, id_evento, id_atividade, mini_bio, instituicao, link_lattes)
+        VALUES
+            (:id_usuario, :id_evento, :id_atividade, :mini_bio, :instituicao, :link_lattes)
         """
     )
     with session_maker() as session:
@@ -413,7 +428,7 @@ def create_event(
         event_row = dict(result.mappings().first())
         new_id: int = event_row["id"]
         for activity in activities:
-            session.execute(
+            activity_result = session.execute(
                 activity_query,
                 {
                     "id_evento": new_id,
@@ -425,5 +440,24 @@ def create_event(
                     "data_hora_fim": ensure_timezone(activity.data_hora_fim),
                 },
             )
+            # consome o RETURNING antes de executar as demais statements na
+            # mesma conexão (o cursor não aceita outra query com resultado
+            # pendente)
+            activity_id: int = activity_result.scalar_one()
+            for entry in activity.lecturers:
+                try:
+                    _ = session.execute(
+                        lecturer_query,
+                        {
+                            "id_usuario": entry.user.id,
+                            "id_evento": new_id,
+                            "id_atividade": activity_id,
+                            "mini_bio": entry.mini_bio,
+                            "instituicao": entry.instituicao,
+                            "link_lattes": entry.link_lattes,
+                        },
+                    )
+                except IntegrityError as e:
+                    raise DuplicateLecturer from e
         session.commit()
     return _row_to_event(event_row)

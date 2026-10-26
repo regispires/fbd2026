@@ -171,19 +171,22 @@ class UserList:
     on_change: Callable
 
     def reload(self) -> None:
-        query = text(
-            """
-            SELECT id, nome, cpf::text, email, data_nascimento,
-                   papel, idade::int
-            FROM usuario_com_idade
-            ORDER BY nome
-            """
-        )
-        with session_maker() as session:
-            self.items = [
-                User(**dict(row)) for row in session.execute(query).mappings()
-            ]
+        self.items = get_users()
         self.on_change()
+
+
+def get_users() -> list[User]:
+    """Todos os usuários, ordenados pelo nome (seleção de ministrantes)."""
+    query = text(
+        """
+        SELECT id, nome, cpf::text, email, data_nascimento,
+               papel, idade::int
+        FROM usuario_com_idade
+        ORDER BY nome
+        """
+    )
+    with session_maker() as session:
+        return [User(**dict(row)) for row in session.execute(query).mappings()]
 
 
 def get_user(user_id: int) -> User:
