@@ -58,7 +58,6 @@ def _confirmar_acao(titulo: str, mensagem: str, cor: str, on_click) -> None:
 )
 def admin_registrations_page(
     event_id: int,
-    user: Annotated[User, Depends(get_current_user)],
 ):
     try:
         event: Event = get_event(event_id)

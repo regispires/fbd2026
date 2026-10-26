@@ -27,10 +27,6 @@ from app.pages.event_form import (
 from app.pages.layout import formatar_moeda, header
 
 
-@app.on_connect
-def start_app(): ...
-
-
 def _periodo(event: Event) -> str:
     """Data do evento; eventos de vários dias mostram o intervalo."""
     inicio = event.data_hora_inicio.date()

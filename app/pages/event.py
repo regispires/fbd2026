@@ -405,15 +405,15 @@ def event_page(
                 .classes("w-full rounded-borders")
                 .style("aspect-ratio: 3 / 1")
             )
-
-        with ui.row().classes("w-full items-center gap-1"):
-            _ = ui.label(event.nome).classes("text-h4")
-            _ = ui.space()
-            _ = ui.button(
-                "Editar",
-                icon="edit",
-                on_click=lambda: _dialogo_editar_evento(event),
-            ).props("flat dense no-caps")
+        if eh_admin:
+            with ui.row().classes("w-full items-center gap-1"):
+                _ = ui.label(event.nome).classes("text-h4")
+                _ = ui.space()
+                _ = ui.button(
+                    "Editar",
+                    icon="edit",
+                    on_click=lambda: _dialogo_editar_evento(event),
+                ).props("flat dense no-caps")
 
         _ = ui.label(event.descricao or "").classes("text-body1")
 
@@ -428,14 +428,14 @@ def event_page(
             _vagas(event)
             _valor(event)
             _localizacao(event)
-
-        with ui.row().classes("w-full items-center gap-1"):
-            _ = ui.space()
-            _ = ui.button(
-                "Excluir",
-                icon="delete",
-                on_click=lambda: _confirmar_exclusao(event),
-            ).props("dense no-caps color=negative ")
-            _ = ui.space()
+        if eh_admin:
+            with ui.row().classes("w-full items-center gap-1"):
+                _ = ui.space()
+                _ = ui.button(
+                    "Excluir",
+                    icon="delete",
+                    on_click=lambda: _confirmar_exclusao(event),
+                ).props("dense no-caps color=negative ")
+                _ = ui.space()
 
     scroll_to_top()
