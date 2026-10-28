@@ -82,8 +82,8 @@ class ComprovanteNaoEhPdf(Exception):
 
 class EventoSemAtividade(Exception):
     """
-    A operação criaria um evento sem atividades, o que viola a regra de
-    negócio de que todo evento precisa de ao menos uma.
+    A operação deixaria o evento sem nenhuma atividade, o que viola a regra
+    de negócio de que todo evento precisa de ao menos uma.
     """
 
 

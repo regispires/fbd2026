@@ -43,6 +43,7 @@ from app.exceptions import (
     AtividadeNaoEncontrada,
     AtividadeSemMinistrante,
     EventoNaoEncontrado,
+    EventoSemAtividade,
     HorarioAtividadeInvalido,
     InscricaoNaoConfirmada,
     MinistranteRepetido,
@@ -245,9 +246,9 @@ def _dialogo_excluir_atividade(evento: Evento, atividade: Atividade) -> None:
     """
     Dialog de confirmação da exclusão da atividade.
 
-    A exclusão é bloqueada quando a atividade já recebeu presenças (regra
-    de negócio); sem presenças, os vínculos de ministrantes são excluídos
-    junto.
+    A exclusão é bloqueada quando a atividade já recebeu presenças ou é a
+    única do evento (regras de negócio); sem bloqueios, os vínculos de
+    ministrantes são excluídos junto.
     """
 
     def confirmar(fechar: Callable[[], None]) -> None:
@@ -255,8 +256,14 @@ def _dialogo_excluir_atividade(evento: Evento, atividade: Atividade) -> None:
             removida = excluir_atividade(atividade.id)
         except AtividadeComDependencias:
             ui.notify(
-                "Esta atividade já possui presenças registradas e não pode "
-                "ser excluída.",
+                "Esta atividade já possui presenças registradas e não pode ser excluída.",
+                type="negative",
+            )
+            fechar()
+            return
+        except EventoSemAtividade:
+            ui.notify(
+                "não é possível excluir a única atividade do evento.",
                 type="negative",
             )
             fechar()
@@ -389,6 +396,7 @@ def _dialogo_remover_ministrante(
                 "A atividade precisa de pelo menos um ministrante.",
                 type="negative",
             )
+            fechar()
             return
         if not removido:
             ui.notify("Ministrante não encontrado.", type="warning")

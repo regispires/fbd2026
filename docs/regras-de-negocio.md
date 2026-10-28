@@ -8,7 +8,7 @@
 
 ## Eventos
 
-- Um evento precisa ter pelo menos uma atividade 
+- Um evento precisa ter pelo menos uma atividade (a remoção da única atividade é bloqueada) 
 - A lista de todos os eventos é mostrada na página `/`, os eventos devem ser mostrados como cards e um evento sem vagas deve aparecer desabilitado com um tooltip informativo (mas usuários administradores ainda conseguem ver os detalhes)
 - Em `/`, um usuário administrador pode interagir com um botão 'Criar evento' que abre um dialog para adicionar um novo evento
 - Adminstradores conseguem ver detalhes de um evento específico com o valor arrecadado pelas inscrições confirmadas, quanto vai ser arrecadado com as inscrições pendentes e quanto foi deixado de arrecadar nas inscrições canceladas, esse detalhamento deve ser mostrado de forma tabular na página `/event/{id}`
@@ -28,7 +28,7 @@
 
 - Criar uma atividade deve ser feito por meio de um botão que abre um dialog na página `/event/{id}/activities`
 - A listagem de atividades de um evento fica em `/event/{id}/activities/{id}`
-- Uma atividade deve possuir pelo menos um ministrante. Os detalhes de uma atividade ficam em `/event/{id}/activities/{id}` e nessa página um administrador pode editar ministrantes e outros detalhes da atividade
+- Uma atividade deve possuir pelo menos um ministrante, e a remoção do único ministrante é bloqueada. Os detalhes de uma atividade ficam em `/event/{id}/activities/{id}` e nessa página um administrador pode editar ministrantes e outros detalhes da atividade
 - O horário da atividade deve estar contido no horário do evento
 - Os participantes de uma atividade devem estar inscritos no evento a que a atividade pertence
 

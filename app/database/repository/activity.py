@@ -19,6 +19,7 @@ from app.exceptions import (
     AtividadeNaoEncontrada,
     AtividadeSemMinistrante,
     EventoNaoEncontrado,
+    EventoSemAtividade,
     HorarioAtividadeInvalido,
     MinistranteRepetido,
 )
@@ -340,8 +341,11 @@ class Atividade(PreviaAtividade):
 
         A exclusão é bloqueada quando a atividade já possui presenças
         registradas (regra: atividades não podem ser removidas depois de
-        receberem presença, ``AtividadeComDependencias``); sem presenças, os
-        vínculos de ministrantes são removidos junto, na mesma transação.
+        receberem presença, ``AtividadeComDependencias``) e quando é a única
+        do evento (regra: todo evento precisa de ao menos uma,
+        ``EventoSemAtividade``). ``AtividadeNaoEncontrada`` se a instância
+        não existir mais. Sem bloqueios, os vínculos de ministrantes são
+        removidos junto, na mesma transação.
         """
         presencas = contar_linhas(
             """
@@ -363,6 +367,25 @@ class Atividade(PreviaAtividade):
         )
         with session_maker() as session:
             session.begin()
+            # regras contadas na mesma transação do DELETE (janela de corrida
+            # menor do que a da contagem prévia): o evento precisa manter ao
+            # menos uma atividade (restantes == 1 -> ``EventoSemAtividade``)
+            # e uma atividade sumida (restantes == 0) é tratada como
+            # inexistente
+            restantes = session.execute(
+                text(
+                    """
+                    SELECT COUNT(id) AS total
+                    FROM atividade
+                    WHERE id_evento = :id_evento
+                    """
+                ),
+                {"id_evento": self.id_evento},
+            ).scalar_one()
+            if restantes == 0:
+                raise AtividadeNaoEncontrada
+            if restantes == 1:
+                raise EventoSemAtividade
             try:
                 # ordem importa: ministrantes referenciam a atividade, então
                 # os vínculos saem antes da própria atividade
@@ -439,8 +462,9 @@ def excluir_atividade(atividade_id: int) -> bool:
     Exclui uma atividade, retornando ``True`` se uma linha foi removida.
 
     A exclusão é bloqueada quando a atividade já possui presenças
-    registradas (``AtividadeComDependencias``); os vínculos de ministrantes
-    são removidos junto. ``AtividadeNaoEncontrada`` se a atividade não existir.
+    registradas (``AtividadeComDependencias``) e quando é a única do evento
+    (``EventoSemAtividade``); os vínculos de ministrantes são removidos
+    junto. ``AtividadeNaoEncontrada`` se a atividade não existir.
     """
     atividade = obter_atividade(atividade_id)
     return atividade.excluir()
