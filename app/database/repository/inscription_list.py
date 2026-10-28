@@ -1,85 +1,42 @@
 """
 Operações sobre inscrições em eventos e presenças em atividades.
-"""
 
-from collections.abc import Callable
-from dataclasses import dataclass
+Fica separado dos dataclasses (``inscription.py``) e concentrado aqui o que
+mistura mais de uma entidade: a inscrição em si (usuário + evento) e a
+presença (usuário + evento + atividade).
+"""
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.database import session_maker
-from app.database.repository import as_bytes, eh_pdf
-from app.database.repository.activity import get_activity
-from app.database.repository.event import get_event
+from app.database.repository import contar_linhas, eh_pdf
+from app.database.repository.activity import obter_atividade
+from app.database.repository.event import obter_evento
 from app.database.repository.inscription import (
-    ActivityAttendance,
-    EventInscription,
+    InscricaoEvento,
+    PresencaAtividade,
 )
-from app.database.repository.user import User, get_user
+from app.database.repository.user import Usuario, obter_usuario_por_id
 from app.exceptions import (
-    AgeBelowClassification,
-    AttendanceNotFound,
-    DuplicateAttendance,
-    DuplicateEventRegistration,
-    EventInscriptionNotConfirmed,
-    InscriptionProofNotPdf,
-    MissingInscriptionProof,
-    NoMoreVacancy,
-    WrongEventActivityInscription,
+    AtividadeDeOutroEvento,
+    ComprovanteAusente,
+    ComprovanteNaoEhPdf,
+    EventoRepetido,
+    IdadeAbaixoClassificacao,
+    InscricaoNaoConfirmada,
+    PresencaNaoEncontrada,
+    PresencaRepetida,
+    SemVagas,
 )
 
 
-@dataclass
-class InscriptionList:
-    """Inscrições de um evento, para o painel administrativo."""
-
-    items: list[EventInscription]
-    on_change: Callable
-    event_id: int
-
-    def reload(self) -> None:
-        query = text(
-            """
-            SELECT i.id_usuario, i.id_evento, i.data_inscricao, i.status,
-                   i.valor, i.meia, i.comprovante_usuario, i.comentario_administrador,
-                   u.nome AS user_nome,
-                   e.nome AS event_nome, e.data_hora_inicio, e.data_hora_fim
-            FROM inscricao_evento i
-            JOIN usuario u ON u.id = i.id_usuario
-            JOIN evento e ON e.id = i.id_evento
-            WHERE i.id_evento = :event_id
-            ORDER BY i.data_inscricao
-            """
-        )
-        with session_maker() as session:
-            rows = session.execute(query, {"event_id": self.event_id}).mappings()
-        self.items = [
-            EventInscription(
-                user_id=r["id_usuario"],
-                event_id=r["id_evento"],
-                data_inscricao=r["data_inscricao"],
-                status=r["status"],
-                valor=r["valor"],
-                meia=r["meia"],
-                comprovante_usuario=as_bytes(r["comprovante_usuario"]),
-                comentario_administrador=r["comentario_administrador"],
-                user_nome=r["user_nome"],
-                event_nome=r["event_nome"],
-                data_hora_inicio=r["data_hora_inicio"],
-                data_hora_fim=r["data_hora_fim"],
-            )
-            for r in rows
-        ]
-        self.on_change()
-
-
-def register_user_for_event(
-    user_id: int,
-    event_id: int,
+def inscrever_usuario_evento(
+    usuario_id: int,
+    evento_id: int,
     meia: bool,
     comprovante_usuario: bytes | None,
-) -> EventInscription:
+) -> InscricaoEvento:
     """
     Inscreve um usuário em um evento, aplicando as regras de negócio:
 
@@ -93,32 +50,32 @@ def register_user_for_event(
     administrador. O limite de inscrições por par (usuário, evento) é
     garantido pela PK.
     """
-    user = get_user(user_id)
-    event = get_event(event_id)
+    usuario = obter_usuario_por_id(usuario_id)
+    evento = obter_evento(evento_id)
     if (
-        event.classificacao_indicativa is not None
-        and user.idade < event.classificacao_indicativa
+        evento.classificacao_indicativa is not None
+        and usuario.idade < evento.classificacao_indicativa
     ):
-        raise AgeBelowClassification
+        raise IdadeAbaixoClassificacao
 
-    if event.valor > 0 and comprovante_usuario is None:
+    if evento.valor > 0 and comprovante_usuario is None:
         # eventos gratuitos não exigem comprovante de pagamento
-        raise MissingInscriptionProof
+        raise ComprovanteAusente
     if comprovante_usuario is not None and not eh_pdf(comprovante_usuario):
-        raise InscriptionProofNotPdf
+        raise ComprovanteNaoEhPdf
 
-    used = _count_active(
+    usadas = contar_linhas(
         """
         SELECT COUNT(id_usuario) AS total
         FROM inscricao_evento
         WHERE id_evento = :event_id AND status <> 'cancelada'
         """,
-        {"event_id": event_id},
+        {"event_id": evento_id},
     )
-    if used >= event.vagas:
-        raise NoMoreVacancy
+    if usadas >= evento.vagas:
+        raise SemVagas
 
-    valor = round(event.valor / 2, 2) if meia else event.valor
+    valor = evento.valor_meia if meia else evento.valor
 
     with session_maker() as session:
         session.begin()
@@ -133,21 +90,21 @@ def register_user_for_event(
                     """
                 ),
                 {
-                    "user_id": user_id,
-                    "event_id": event_id,
+                    "user_id": usuario_id,
+                    "event_id": evento_id,
                     "valor": valor,
                     "meia": meia,
                     "comprovante_usuario": comprovante_usuario,
                 },
             )
         except IntegrityError as e:
-            raise DuplicateEventRegistration from e
+            raise EventoRepetido from e
         session.commit()
         data_inscricao = result.scalar_one()
 
-    return EventInscription(
-        user_id=user_id,
-        event_id=event_id,
+    return InscricaoEvento(
+        usuario_id=usuario_id,
+        evento_id=evento_id,
         data_inscricao=data_inscricao,
         status="pendente",
         valor=valor,
@@ -156,9 +113,9 @@ def register_user_for_event(
     )
 
 
-def add_attendance(
-    user_id: int, event_id: int, activity_id: int
-) -> ActivityAttendance:
+def registrar_presenca(
+    usuario_id: int, evento_id: int, atividade_id: int
+) -> PresencaAtividade:
     """
     Registra a presença de um participante em uma atividade (regra de
     negócio: um administrador adiciona a presença durante ou após a
@@ -166,39 +123,37 @@ def add_attendance(
 
     - o usuário existe e a atividade existe (o ``id`` da atividade é único no banco);
     - a atividade pertence ao evento informado (senão,
-      ``WrongEventActivityInscription``);
+      ``AtividadeDeOutroEvento``);
     - o usuário está inscrito no evento e a inscrição está **confirmada**
-      (senão, ``EventInscriptionNotConfirmed``);
+      (senão, ``InscricaoNaoConfirmada``);
     - a atividade ainda tem vagas (contando as presenças registradas).
 
     O limite de presenças por triplo (usuário, evento, atividade) é
     garantido pela PK: uma presença já existente gera ``IntegrityError``,
-    traduzida para ``DuplicateAttendance``.
+    traduzida para ``PresencaRepetida``.
     """
-    # Valida a existência do usuário (levanta UserNotFound se não existir);
-    # o resultado não é usado, apenas o efeito de verificação.
-    _ = get_user(user_id)
-    activity = get_activity(activity_id)
-    if activity.id_evento != event_id:
-        raise WrongEventActivityInscription
+    # Valida a existência do usuário (levanta UsuarioNaoEncontrado se não
+    # existir); o resultado não é usado, apenas o efeito de verificação.
+    _ = obter_usuario_por_id(usuario_id)
+    atividade = obter_atividade(atividade_id)
+    if atividade.id_evento != evento_id:
+        raise AtividadeDeOutroEvento
 
-    insp = _fetch_event_inscription(user_id, event_id)
-    if insp is None:
-        raise EventInscriptionNotConfirmed
-    if insp["status"] != "confirmada":
-        raise EventInscriptionNotConfirmed
+    inscricao = _buscar_inscricao_evento(usuario_id, evento_id)
+    if inscricao is None or inscricao["status"] != "confirmada":
+        raise InscricaoNaoConfirmada
 
-    used = _count_active(
+    usadas = contar_linhas(
         """
         SELECT COUNT(id_usuario) AS total
         FROM presenca_atividade
         WHERE id_evento = :event_id
           AND id_atividade = :activity_id
         """,
-        {"event_id": event_id, "activity_id": activity_id},
+        {"event_id": evento_id, "activity_id": atividade_id},
     )
-    if used >= activity.vagas:
-        raise NoMoreVacancy
+    if usadas >= atividade.vagas:
+        raise SemVagas
 
     with session_maker() as session:
         session.begin()
@@ -212,26 +167,26 @@ def add_attendance(
                     """
                 ),
                 {
-                    "user_id": user_id,
-                    "event_id": event_id,
-                    "activity_id": activity_id,
+                    "user_id": usuario_id,
+                    "event_id": evento_id,
+                    "activity_id": atividade_id,
                 },
             )
         except IntegrityError as e:
-            raise DuplicateAttendance from e
+            raise PresencaRepetida from e
         session.commit()
 
-    return ActivityAttendance(
-        user_id=user_id,
-        event_id=event_id,
-        id_atividade=activity_id,
+    return PresencaAtividade(
+        usuario_id=usuario_id,
+        evento_id=evento_id,
+        id_atividade=atividade_id,
     )
 
 
-def remove_attendance(user_id: int, event_id: int, activity_id: int) -> None:
+def remover_presenca(usuario_id: int, evento_id: int, atividade_id: int) -> None:
     """
     Remove a presença de um participante da atividade (desfaz um registro
-    de presença). Levanta ``AttendanceNotFound`` se não houver presença a
+    de presença). Levanta ``PresencaNaoEncontrada`` se não houver presença a
     remover.
     """
     query = text(
@@ -247,73 +202,53 @@ def remove_attendance(user_id: int, event_id: int, activity_id: int) -> None:
         result = session.execute(
             query,
             {
-                "user_id": user_id,
-                "event_id": event_id,
-                "activity_id": activity_id,
+                "user_id": usuario_id,
+                "event_id": evento_id,
+                "activity_id": atividade_id,
             },
         )
         session.commit()
-        removed = result.rowcount == 1
-    if not removed:
-        raise AttendanceNotFound
+        removida = result.rowcount == 1
+    if not removida:
+        raise PresencaNaoEncontrada
 
 
-def get_inscription(user_id: int, event_id: int) -> EventInscription | None:
+def obter_inscricao(usuario_id: int, evento_id: int) -> InscricaoEvento | None:
     """
     Busca a inscrição de um usuário em um evento (qualquer status),
     preenchendo os campos para exibição. ``None`` se não existir.
     """
-    row = _fetch_event_inscription(user_id, event_id)
+    row = _buscar_inscricao_evento(usuario_id, evento_id)
     if row is None:
         return None
-    return EventInscription(
-        user_id=row["id_usuario"],
-        event_id=row["id_evento"],
-        data_inscricao=row["data_inscricao"],
-        status=row["status"],
-        valor=row["valor"],
-        meia=row["meia"],
-        comprovante_usuario=as_bytes(row["comprovante_usuario"]),
-        comentario_administrador=row["comentario_administrador"],
-        user_nome=row["user_nome"],
-    )
+    return InscricaoEvento.de_linha(row)
 
 
-def get_event_inscriptions(event_id: int) -> list[EventInscription]:
-    """Inscrições em um evento, com nome do usuário para exibição."""
+def listar_inscricoes_do_evento(evento_id: int) -> list[InscricaoEvento]:
+    """Inscrições de um evento, com nomes e datas para o painel administrativo."""
     query = text(
         """
         SELECT i.id_usuario, i.id_evento, i.data_inscricao, i.status,
                i.valor, i.meia, i.comprovante_usuario, i.comentario_administrador,
-               u.nome AS user_nome
+               u.nome AS usuario_nome,
+               e.nome AS evento_nome, e.data_hora_inicio, e.data_hora_fim
         FROM inscricao_evento i
         JOIN usuario u ON u.id = i.id_usuario
+        JOIN evento e ON e.id = i.id_evento
         WHERE i.id_evento = :event_id
         ORDER BY i.data_inscricao
         """
     )
     with session_maker() as session:
-        rows = session.execute(query, {"event_id": event_id}).mappings()
-    return [
-        EventInscription(
-            user_id=r["id_usuario"],
-            event_id=r["id_evento"],
-            data_inscricao=r["data_inscricao"],
-            status=r["status"],
-            valor=r["valor"],
-            meia=r["meia"],
-            comprovante_usuario=as_bytes(r["comprovante_usuario"]),
-            comentario_administrador=r["comentario_administrador"],
-            user_nome=r["user_nome"],
-        )
-        for r in rows
-    ]
+        rows = session.execute(query, {"event_id": evento_id}).mappings()
+        return [InscricaoEvento.de_linha(r) for r in rows]
 
 
-def get_participants(event_id: int) -> list[User]:
+def listar_participantes(evento_id: int) -> list[Usuario]:
     """
     Usuários com inscrição **confirmada** em um evento — os participantes
-    que podem receber presença (regra de negócio da ``add_attendance``).
+    que podem receber presença (regra de negócio do
+    ``registrar_presenca``).
     """
     query = text(
         """
@@ -326,22 +261,11 @@ def get_participants(event_id: int) -> list[User]:
         """
     )
     with session_maker() as session:
-        rows = session.execute(query, {"event_id": event_id}).mappings()
-    return [
-        User(
-            id=r["id"],
-            nome=r["nome"],
-            cpf=r["cpf"],
-            email=r["email"],
-            data_nascimento=r["data_nascimento"],
-            papel=r["papel"],
-            idade=r["idade"],
-        )
-        for r in rows
-    ]
+        rows = session.execute(query, {"event_id": evento_id}).mappings()
+        return [Usuario.de_linha(r) for r in rows]
 
 
-def get_activity_attendance(event_id: int, activity_id: int) -> list[User]:
+def listar_presencas_atividade(evento_id: int, atividade_id: int) -> list[Usuario]:
     """
     Usuários com presença registrada em uma atividade — para exibir os
     presentes e filtrar quem ainda pode recebê-la (a PK da
@@ -360,31 +284,20 @@ def get_activity_attendance(event_id: int, activity_id: int) -> list[User]:
     )
     with session_maker() as session:
         rows = session.execute(
-            query, {"event_id": event_id, "activity_id": activity_id}
+            query, {"event_id": evento_id, "activity_id": atividade_id}
         ).mappings()
-    return [
-        User(
-            id=r["id"],
-            nome=r["nome"],
-            cpf=r["cpf"],
-            email=r["email"],
-            data_nascimento=r["data_nascimento"],
-            papel=r["papel"],
-            idade=r["idade"],
-        )
-        for r in rows
-    ]
+        return [Usuario.de_linha(r) for r in rows]
 
 
 # --- Helpers internos -------------------------------------------------------
 
 
-def _fetch_event_inscription(user_id: int, event_id: int) -> dict | None:
+def _buscar_inscricao_evento(usuario_id: int, evento_id: int) -> dict | None:
     query = text(
         """
         SELECT i.id_usuario, i.id_evento, i.data_inscricao, i.status, i.valor,
                i.meia, i.comprovante_usuario, i.comentario_administrador,
-               u.nome AS user_nome
+               u.nome AS usuario_nome
         FROM inscricao_evento i
         JOIN usuario u ON u.id = i.id_usuario
         WHERE i.id_usuario = :user_id AND i.id_evento = :event_id
@@ -393,15 +306,8 @@ def _fetch_event_inscription(user_id: int, event_id: int) -> dict | None:
     )
     with session_maker() as session:
         row = (
-            session.execute(query, {"user_id": user_id, "event_id": event_id})
+            session.execute(query, {"user_id": usuario_id, "event_id": evento_id})
             .mappings()
             .first()
         )
     return dict(row) if row is not None else None
-
-
-def _count_active(query: str, params: dict) -> int:
-    """Contagem de inscrições ativas (não canceladas) em coluna explícita."""
-    with session_maker() as session:
-        row = session.execute(text(query), params).mappings().first()
-    return int(row["total"]) if row else 0

@@ -1,16 +1,21 @@
 """
-Elementos compartilhados entre as páginas: o decorator ``page`` (registra
-cada rota e renderiza o cabeçalho único da aplicação), badges, formatação de
-moeda, upload de comprovante e botão de voltar ao topo.
+Elementos compartilhados entre as páginas: o decorator ``pagina`` (registra
+cada rota e renderiza o cabeçalho único da aplicação), badges, formatação
+de moeda e de datas, cartões de evento, linhas de ícone+texto, tela de
+"não encontrado", dialog de confirmação, upload de comprovante e botão de
+voltar ao topo.
 """
 
 import functools
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
+from datetime import datetime
 from typing import Any
-
 from nicegui import app, events, ui
 
-from app.database.repository.user import User
+from app.database.repository.activity import PreviaAtividade
+from app.database.repository.event import Evento
+from app.database.repository.user import Usuario
 
 # status da inscrição -> cor do badge (cores padrão do Quasar)
 STATUS_COR = {
@@ -40,6 +45,130 @@ def formatar_moeda(valor: float) -> str:
     return "R$ " + texto.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def data_hora(quando: datetime) -> str:
+    """Formata um datetime no padrão brasileiro (dia/mês/ano às HH:MM)."""
+    return quando.strftime("%d/%m/%Y às %H:%M")
+
+
+def periodo(evento: Evento) -> str:
+    """Data do evento; eventos de vários dias mostram o intervalo."""
+    inicio = evento.data_hora_inicio.date()
+    fim = evento.data_hora_fim.date()
+    if inicio == fim:
+        return inicio.strftime("%d/%m/%Y")
+    return f"{inicio:%d/%m/%Y} – {fim:%d/%m/%Y}"
+
+
+def horario_atividade(atividade: PreviaAtividade) -> str:
+    """Intervalo completo de uma atividade ("início – fim")."""
+    return f"{data_hora(atividade.data_hora_inicio)} – {data_hora(atividade.data_hora_fim)}"
+
+
+@contextmanager
+def item_icone(icone: str, tamanho: str = "18px") -> Iterator[None]:
+    """Linha "ícone + conteúdo": o corpo do ``with`` entra ao lado do ícone."""
+    with ui.row().classes("items-center gap-1"):
+        _ = ui.icon(icone, size=tamanho)
+        yield
+
+
+def linha_de_icones(itens: Sequence[tuple[str, str]]) -> None:
+    """Sequência de pares "ícone + texto" em uma linha (cartões de listagem)."""
+    with ui.row().classes("items-center gap-x-6 gap-y-1 text-grey-8"):
+        for icone, texto in itens:
+            with item_icone(icone):
+                _ = ui.label(texto).classes("text-body2")
+
+
+def preco(evento: Evento) -> None:
+    """Preço do evento com ícone; "Gratuito" quando o valor é zero."""
+    with ui.row().classes("items-center gap-1"):
+        _ = ui.icon("attach_money", size="16px")
+        if evento.valor > 0:
+            _ = ui.label(formatar_moeda(evento.valor)).classes("text-body2")
+        else:
+            _ = ui.label("Gratuito").classes("text-body2 text-positive")
+
+
+def corpo_evento(evento: Evento) -> None:
+    """Corpo do cartão de evento: imagem (ou espaço reservado), nome, data e preço."""
+    if evento.banner_thumbnail:
+        _ = ui.image(evento.banner_thumbnail).classes("w-full aspect-video")
+    else:
+        # evento sem imagem: mantém a mesma proporção para alinhar o grid
+        with ui.element("div").classes(
+            "w-full aspect-video flex items-center justify-center bg-grey-4"
+        ):
+            _ = ui.icon("event", size="48px").classes("text-grey-7")
+    with ui.card_section().classes("w-full"):
+        _ = ui.label(evento.nome).classes("text-subtitle1 text-weight-medium")
+        with ui.row().classes("items-center gap-x-4 gap-y-1 text-grey-7"):
+            with ui.row().classes("items-center gap-1"):
+                _ = ui.icon("calendar_today", size="16px")
+                _ = ui.label(periodo(evento)).classes("text-body2")
+                if (evento.inscritas or 0) >= evento.vagas:
+                    _ = ui.label("Lotado").classes("text-body2")
+
+            preco(evento)
+
+
+def cartao_evento(evento: Evento) -> None:
+    """Cartão de evento com link para os detalhes (página inicial)."""
+    with (
+        ui.link(target=f"/event/{evento.id}").classes("no-underline text-inherit"),
+        ui.card().tight().classes("w-full h-full cursor-pointer"),
+    ):
+        corpo_evento(evento)
+
+
+def nao_encontrado(
+    icone: str, titulo: str, destino: str | None = None, texto_link: str | None = None
+) -> None:
+    """
+    Tela de "não encontrado" das rotas parametrizadas: ícone, título e, se
+    informado, um link de volta (``destino``/``texto_link``).
+    """
+    with ui.column().classes("w-full items-center q-mt-xl"):
+        _ = ui.icon(icone, size="64px").classes("text-grey-6")
+        _ = ui.label(titulo).classes("text-h6")
+        if destino is not None:
+            _ = ui.link(texto_link or "Voltar", destino)
+
+
+def dialogo_confirmacao(
+    titulo: str,
+    mensagem: str,
+    rotulo_acao: str,
+    cor: str,
+    ao_confirmar: Callable[[Callable[[], None]], None],
+    rotulo_cancelar: str = "Voltar",
+    marca: str | None = None,
+) -> None:
+    """
+    Dialog de confirmação para ações destrutivas ou irreversíveis.
+
+    ``ao_confirmar`` recebe ``fechar`` e decide quando fechar o dialog: erros
+    da ação notificam e mantêm o dialog aberto; sucesso fecha (ou navega)
+    conforme o chamador. ``marca`` (opcional) vira um ``.mark`` no dialog,
+    para seleção em testes de interface.
+    """
+    dialogo = ui.dialog()
+    if marca is not None:
+        _ = dialogo.mark(marca)
+    with dialogo, ui.card().classes("w-full").style("max-width: 420px"):
+        _ = ui.label(titulo).classes("text-h6")
+        _ = ui.label(mensagem).classes("text-body2 text-grey-7")
+        with ui.row().classes("w-full q-mt-md"):
+            _ = ui.space()
+            _ = ui.button(rotulo_cancelar, on_click=dialogo.close).props("flat")
+
+            def confirmar() -> None:
+                ao_confirmar(dialogo.close)
+
+            _ = ui.button(rotulo_acao, on_click=confirmar).props(f"color={cor}")
+    dialogo.open()
+
+
 def status_badge(status: str) -> ui.badge:
     """Badge colorido com o status da inscrição."""
     return ui.badge(STATUS_ROTULO.get(status, status)).props(
@@ -58,20 +187,17 @@ def upload_comprovante(
     """
     Upload do comprovante (somente PDF) usado nos dialogs de inscrição.
 
-    Retorna ``(upload, arquivos, nome_arquivo)``:
+    Retorna o controle de upload configurado:
 
-    - ``arquivos`` guarda no máximo **um** arquivo ``(nome, bytes)``: ao
-      selecionar um novo arquivo, o anterior é substituído;
-    - ``nome_arquivo`` exibe o nome do arquivo selecionado (a lista do
-      uploader é limpa após o upload, para liberar a seleção de um novo
-      arquivo — por isso o nome fica nesse label);
+    - ao selecionar um novo arquivo, o anterior é substituído
+      (``max_files=1`` e a lista é limpa após o upload, pelo chamador);
+    - o nome do arquivo selecionado fica por conta do chamador (o uploader
+      limpa a lista após o upload, então o nome precisa ser guardado à
+      parte);
     - arquivos que não sejam PDF são rejeitados pelo filtro ``accept`` do
       uploader e o ``erro`` é preenchido (a validação definitiva também
       acontece no banco, via ``eh_pdf``).
     """
-    nome_arquivo = ui.label().classes("text-body2 text-grey-8")
-    nome_arquivo.visible = False
-
     upload = (
         ui.upload(auto_upload=True, max_files=1)
         .props("accept=.pdf")
@@ -98,46 +224,47 @@ def _sair() -> None:
     )
 
 
-def page(
-    path: str, *, with_header: bool = True, **ui_page_kwargs: Any
+def pagina(
+    caminho: str, *, com_cabecalho: bool = True, **kwargs_ui_page: Any
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator que registra uma página da aplicação (uma volta sobre ``@ui.page``).
 
-    Além de criar a rota, renderiza o cabeçalho ``header`` **uma única vez por
-    página** em um ponto central: os construtores de página apenas montam o
-    conteúdo e nunca chamam o componente por si mesmos. O usuário exibido no
-    menu vem do parâmetro ``user`` declarado na função da página, com a
-    dependência FastAPI que cada página já resolve (``get_current_user``,
-    ``get_optional_current_user``); páginas sem esse parâmetro ganham o
-    cabeçalho de visitante (menu "Entrar"). ``with_header=False`` exclui a
+    Além de criar a rota, renderiza o cabeçalho ``cabecalho`` **uma única vez
+    por página** em um ponto central: os construtores de página apenas montam
+    o conteúdo e nunca chamam o componente por si mesmos. O usuário exibido
+    no menu vem do parâmetro ``usuario`` declarado na função da página, com a
+    dependência FastAPI que cada página já resolve (``obter_usuario``,
+    ``obter_usuario_opcional``); páginas sem esse parâmetro ganham o
+    cabeçalho de visitante (menu "Entrar"). ``com_cabecalho=False`` exclui a
     única página dedicada que não o usa (login, tela cheia). Os demais
-    argumentos (``dependencies``, ``title``, ...) são repassados ao ``@ui.page``.
+    argumentos (``dependencies``, ``title``, ...) são repassados ao
+    ``@ui.page``.
     """
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        @ui.page(path, **ui_page_kwargs)
+        @ui.page(caminho, **kwargs_ui_page)
         @functools.wraps(func)
-        def build_page(*args: Any, **arguments: Any) -> Any:
-            if with_header:
-                header(arguments.get("user"))
-            return func(*args, **arguments)
+        def construir_pagina(*args: Any, **argumentos: Any) -> Any:
+            if com_cabecalho:
+                cabecalho(argumentos.get("usuario"))
+            return func(*args, **argumentos)
 
-        return build_page
+        return construir_pagina
 
     return decorator
 
 
-def header(user: User | None) -> None:
+def cabecalho(usuario: Usuario | None) -> None:
     """
     Cabeçalho com o título (link para a página inicial) e o menu do usuário.
 
-    Não é chamado pelas páginas: o decorator ``page`` o renderiza uma única
+    Não é chamado pelas páginas: o decorator ``pagina`` o renderiza uma única
     vez para cada rota registrada da aplicação. O menu mostra "Minhas
-    inscrições" e "Sair" quando ``user`` é um usuário autenticado (páginas
-    privadas o declaram com ``Annotated[User, Depends(get_current_user)]``),
-    e "Entrar" caso contrário (páginas públicas usam ``User | None`` com
-    ``Depends(get_optional_current_user)``).
+    inscrições" e "Sair" quando ``usuario`` é um usuário autenticado (páginas
+    privadas o declaram com ``Annotated[Usuario, Depends(obter_usuario)]``),
+    e "Entrar" caso contrário (páginas públicas usam ``Usuario | None`` com
+    ``Depends(obter_usuario_opcional)``).
 
     O tema escolhido no switch fica em ``app.storage.general``: preferência
     global persistida da aplicação, revalidada a cada navegação/recarga.
@@ -169,12 +296,12 @@ def header(user: User | None) -> None:
 
             _ = ui.separator()
 
-            if user is not None:
+            if usuario is not None:
                 with (
                     ui.menu_item(),
                     ui.item_section().props("avatar"),
                 ):
-                    _ = ui.label(user.nome)
+                    _ = ui.label(usuario.nome)
 
                 with (
                     ui.menu_item(
@@ -198,6 +325,6 @@ def header(user: User | None) -> None:
                     _ = ui.icon("login")
 
 
-def scroll_to_top() -> None:
+def voltar_ao_topo() -> None:
     with ui.page_scroller(position="bottom-right", x_offset=20, y_offset=20):
         _ = ui.button("Voltar ao topo")

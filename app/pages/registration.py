@@ -1,181 +1,171 @@
 """
 Painel administrativo de inscrições em eventos.
 
-- ``/event/{event_id}/registrations``: listagem das inscrições do evento
+- ``/event/{evento_id}/registrations``: listagem das inscrições do evento
   (com destaque para as pendentes de avaliação).
-- ``/event/{event_id}/registrations/{user_id}``: avaliação — o administrador
-  pode comentar (independentemente de aprovar/recusar), aprovar ou recusar.
-  Um administrador não pode avaliar a própria inscrição.
+- ``/event/{evento_id}/registrations/{usuario_id}``: avaliação — o
+  administrador pode comentar (independentemente de aprovar/recusar),
+  aprovar ou recusar. Um administrador não pode avaliar a própria inscrição.
 """
 
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends
 from nicegui import ui
 
-from app.auth import get_current_user, require_administrador
-from app.database.repository.event import Event, get_event
-from app.database.repository.inscription_list import InscriptionList, get_inscription
-from app.database.repository.user import User
+from app.auth import exigir_administrador, obter_usuario
+from app.database.repository.event import Evento, EventoNaoEncontrado, obter_evento
+from app.database.repository.inscription_list import (
+    listar_inscricoes_do_evento,
+    obter_inscricao,
+)
+from app.database.repository.user import Usuario
 from app.exceptions import (
-    CannotApproveOwnInscription,
-    EventNotFound,
-    InscriptionNotPending,
+    AprovacaoPropriaProibida,
+    InscricaoNaoPendente,
 )
 from app.pages.layout import (
+    dialogo_confirmacao,
     formatar_moeda,
+    item_icone,
     meia_badge,
-    page,
-    scroll_to_top,
+    nao_encontrado,
+    pagina,
     status_badge,
+    voltar_ao_topo,
 )
-
-
-def _evento_nao_encontrado() -> None:
-    with ui.column().classes("w-full items-center q-mt-xl"):
-        _ = ui.icon("event_busy", size="64px").classes("text-grey-6")
-        _ = ui.label("Evento não encontrado").classes("text-h6")
-        _ = ui.link("Voltar para a lista de eventos", "/")
-
-
-def _confirmar_acao(titulo: str, mensagem: str, cor: str, on_click) -> None:
-    """Dialog de confirmação para aprovar/recusar (ações irreversíveis)."""
-    with ui.dialog() as dialogo, ui.card().classes("w-full").style("max-width: 420px"):
-        _ = ui.label(titulo).classes("text-h6")
-        _ = ui.label(mensagem).classes("text-body2 text-grey-7")
-        with ui.row().classes("w-full q-mt-md"):
-            _ = ui.space()
-            _ = ui.button("Voltar", on_click=dialogo.close).props("flat")
-            _ = ui.button(titulo, on_click=on_click).props(f"color={cor}")
-
-    dialogo.open()
 
 
 # página privada + restrita a administradores
-@page(
-    "/event/{event_id}/registrations",
-    dependencies=[Depends(require_administrador)],
+@pagina(
+    "/event/{evento_id}/registrations",
+    dependencies=[Depends(exigir_administrador)],
 )
-def admin_registrations_page(
-    event_id: int,
+def pagina_inscricoes_do_evento(
+    evento_id: int,
 ):
     try:
-        event: Event = get_event(event_id)
-    except EventNotFound:
-        _evento_nao_encontrado()
+        evento: Evento = obter_evento(evento_id)
+    except EventoNaoEncontrado:
+        nao_encontrado(
+            "event_busy", "Evento não encontrado", "/", "Voltar para a lista de eventos"
+        )
         return
 
     with ui.column().classes("w-full gap-4").style("max-width: 1000px; margin: 0 auto"):
         with ui.row().classes("w-full items-center"):
-            _ = ui.link(f"← {event.nome}", f"/event/{event.id}").classes("text-primary")
+            _ = ui.link(f"← {evento.nome}", f"/event/{evento.id}").classes(
+                "text-primary"
+            )
 
         _ = ui.label("Inscrições").classes("text-h5")
 
         @ui.refreshable
         def lista() -> None:
-            if not inscricoes.items:
+            inscricoes = listar_inscricoes_do_evento(evento_id)
+            if not inscricoes:
                 _ = ui.label("Nenhuma inscrição registrada.").classes("text-grey-7")
                 return
-            pendentes = sum(1 for i in inscricoes.items if i.status == "pendente")
+            pendentes = sum(1 for i in inscricoes if i.status == "pendente")
             if pendentes:
                 _ = ui.label(
                     f"{pendentes} inscrição(ões) aguardando avaliação."
                 ).classes("text-warning text-body2")
-            for i in inscricoes.items:
+            for inscricao in inscricoes:
                 with (
                     ui.card().classes("w-full"),
                     ui.row().classes("w-full items-center gap-3"),
                 ):
                     with ui.column().classes("gap-0 flex-grow"):
-                        _ = ui.label(i.user_nome).classes("text-subtitle1")
+                        _ = ui.label(inscricao.usuario_nome).classes("text-subtitle1")
                         _ = ui.label(
-                            f"Inscrito em {i.data_inscricao:%d/%m/%Y %H:%M}"
+                            f"Inscrito em {inscricao.data_inscricao:%d/%m/%Y %H:%M}"
                         ).classes("text-caption text-grey-7")
-                    if i.meia:
+                    if inscricao.meia:
                         meia_badge()
-                    if i.valor:
-                        _ = ui.label(formatar_moeda(i.valor)).classes("text-body2")
-                    status_badge(i.status)
+                    if inscricao.valor:
+                        _ = ui.label(formatar_moeda(inscricao.valor)).classes(
+                            "text-body2"
+                        )
+                    status_badge(inscricao.status)
                     _ = ui.link(
                         "Avaliar",
-                        f"/event/{event.id}/registrations/{i.user_id}",
+                        f"/event/{evento.id}/registrations/{inscricao.usuario_id}",
                     ).props("flat dense no-caps color=primary")
 
-        inscricoes = InscriptionList(
-            items=[], on_change=lista.refresh, event_id=event_id
-        )
         lista()
-        inscricoes.reload()
 
-    scroll_to_top()
+    voltar_ao_topo()
 
 
-@page(
-    "/event/{event_id}/registrations/{user_id}",
-    dependencies=[Depends(require_administrador)],
+# página privada + restrita a administradores
+@pagina(
+    "/event/{evento_id}/registrations/{usuario_id}",
+    dependencies=[Depends(exigir_administrador)],
 )
-def admin_registration_detail_page(
-    event_id: int,
-    user_id: int,
-    user: Annotated[User, Depends(get_current_user)],
+def pagina_avaliacao(
+    evento_id: int,
+    usuario_id: int,
+    usuario: Annotated[Usuario, Depends(obter_usuario)],
 ):
     try:
-        event: Event = get_event(event_id)
-    except EventNotFound:
-        _evento_nao_encontrado()
+        evento: Evento = obter_evento(evento_id)
+    except EventoNaoEncontrado:
+        nao_encontrado(
+            "event_busy", "Evento não encontrado", "/", "Voltar para a lista de eventos"
+        )
         return
 
-    inscription = get_inscription(user_id, event_id)
+    inscricao = obter_inscricao(usuario_id, evento_id)
 
     with ui.column().classes("w-full gap-4").style("max-width: 1000px; margin: 0 auto"):
         _ = ui.link(
-            f"← Inscrições de {event.nome}",
-            f"/event/{event.id}/registrations",
+            f"← Inscrições de {evento.nome}",
+            f"/event/{evento.id}/registrations",
         ).classes("text-primary")
 
-        if inscription is None:
+        if inscricao is None:
             with ui.column().classes("w-full items-center q-mt-xl"):
                 _ = ui.icon("assignment_late", size="64px").classes("text-grey-6")
                 _ = ui.label("Inscrição não encontrada").classes("text-h6")
             return
 
-        eh_proprio = user_id == user.id
+        eh_proprio = usuario_id == usuario.id
 
         with ui.card().classes("w-full"), ui.column().classes("w-full gap-4"):
             with ui.row().classes("w-full items-center gap-3"):
-                _ = ui.label(inscription.user_nome or f"Usuário {user_id}").classes(
+                _ = ui.label(inscricao.usuario_nome or f"Usuário {usuario_id}").classes(
                     "text-h6"
                 )
-                status_badge(inscription.status)
+                status_badge(inscricao.status)
                 _ = ui.space()
-                _ = ui.link("Ver evento", f"/event/{event.id}").props(
+                _ = ui.link("Ver evento", f"/event/{evento.id}").props(
                     "flat dense no-caps"
                 )
 
             with ui.row().classes("w-full items-center gap-x-6 gap-y-1 text-grey-8"):
-                with ui.row().classes("items-center gap-1"):
-                    _ = ui.icon("calendar_today", size="18px")
+                with item_icone("calendar_today"):
                     _ = ui.label(
-                        f"Inscrito em {inscription.data_inscricao:%d/%m/%Y %H:%M}"
+                        f"Inscrito em {inscricao.data_inscricao:%d/%m/%Y %H:%M}"
                     ).classes("text-body2")
-                with ui.row().classes("items-center gap-1"):
-                    _ = ui.icon("attach_money", size="18px")
-                    if event.valor > 0:
-                        _ = ui.label(formatar_moeda(inscription.valor or 0.0)).classes(
+                with item_icone("attach_money"):
+                    if evento.valor > 0:
+                        _ = ui.label(formatar_moeda(inscricao.valor or 0.0)).classes(
                             "text-body2"
                         )
-                        if inscription.meia:
+                        if inscricao.meia:
                             meia_badge()
                     else:
                         _ = ui.label("Gratuito").classes("text-body2 text-positive")
 
-            if inscription.comprovante_usuario is not None:
+            if inscricao.comprovante_usuario is not None:
                 with ui.row().classes("items-center gap-2"):
                     _ = ui.icon("picture_as_pdf", size="20px").classes("text-primary")
                     _ = ui.label("Comprovante").classes("text-caption text-grey-7")
                     _ = ui.link(
                         "Baixar comprovante",
-                        f"/api/registrations/{event.id}/{user_id}/comprovante",
+                        f"/api/registrations/{evento.id}/{usuario_id}/comprovante",
                     ).props("flat dense no-caps color=primary")
             else:
                 _ = ui.label("Sem comprovante anexado.").classes(
@@ -187,11 +177,11 @@ def admin_registration_detail_page(
                 "text-caption text-grey-7"
             )
             comentario = ui.textarea(
-                "Comentário", value=inscription.comentario_administrador or ""
+                "Comentário", value=inscricao.comentario_administrador or ""
             ).classes("w-full")
 
             def salvar_comentario() -> None:
-                inscription.set_comentario(comentario.value or "")
+                inscricao.definir_comentario(comentario.value or "")
                 ui.notify("Comentário salvo.", type="positive")
 
             _ = ui.button(
@@ -203,7 +193,7 @@ def admin_registration_detail_page(
             with ui.separator():
                 pass
 
-            if inscription.status == "pendente":
+            if inscricao.status == "pendente":
                 if eh_proprio:
                     _ = ui.label(
                         "Esta é a sua própria inscrição: você não pode aprovar nem recusá-la. "
@@ -215,12 +205,12 @@ def admin_registration_detail_page(
                     ).classes("text-caption text-grey-7")
 
                     def aprovar() -> None:
-                        def confirmar() -> None:
+                        def confirmar(fechar: Callable[[], None]) -> None:
                             try:
-                                inscription.approve(user.id)
+                                inscricao.aprovar(usuario.id)
                             except (
-                                CannotApproveOwnInscription,
-                                InscriptionNotPending,
+                                AprovacaoPropriaProibida,
+                                InscricaoNaoPendente,
                             ) as e:
                                 ui.notify(
                                     "Não foi possível aprovar a inscrição.",
@@ -229,23 +219,24 @@ def admin_registration_detail_page(
                                 ui.log(f"Aprovar falhou: {e!r}")
                                 return
                             ui.notify("Inscrição aprovada.", type="positive")
-                            ui.navigate.to(f"/event/{event_id}/registrations")
+                            ui.navigate.to(f"/event/{evento_id}/registrations")
 
-                        _confirmar_acao(
+                        dialogo_confirmacao(
                             "Aprovar inscrição",
-                            f"Confirmar a inscrição de {inscription.user_nome or user_id} "
-                            f"no valor de {formatar_moeda(inscription.valor or 0.0)}?",
+                            f"Confirmar a inscrição de {inscricao.usuario_nome or usuario_id} "
+                            f"no valor de {formatar_moeda(inscricao.valor or 0.0)}?",
+                            "Aprovar inscrição",
                             "positive",
                             confirmar,
                         )
 
                     def recusar() -> None:
-                        def confirmar() -> None:
+                        def confirmar(fechar: Callable[[], None]) -> None:
                             try:
-                                inscription.reject(user.id)
+                                inscricao.recusar(usuario.id)
                             except (
-                                CannotApproveOwnInscription,
-                                InscriptionNotPending,
+                                AprovacaoPropriaProibida,
+                                InscricaoNaoPendente,
                             ) as e:
                                 ui.notify(
                                     "Não foi possível recusar a inscrição.",
@@ -254,12 +245,13 @@ def admin_registration_detail_page(
                                 ui.log(f"Recusar falhou: {e!r}")
                                 return
                             ui.notify("Inscrição recusada.", type="warning")
-                            ui.navigate.to(f"/event/{event_id}/registrations")
+                            ui.navigate.to(f"/event/{evento_id}/registrations")
 
-                        _confirmar_acao(
+                        dialogo_confirmacao(
                             "Recusar inscrição",
-                            f"Recusar a inscrição de {inscription.user_nome or user_id} "
+                            f"Recusar a inscrição de {inscricao.usuario_nome or usuario_id} "
                             f"e liberar a vaga?",
+                            "Recusar inscrição",
                             "negative",
                             confirmar,
                         )
@@ -275,7 +267,7 @@ def admin_registration_detail_page(
             else:
                 _ = ui.label(
                     "Esta inscrição já foi avaliada (status atual: "
-                    f"{inscription.status})."
+                    f"{inscricao.status})."
                 ).classes("text-caption text-grey-7")
 
-    scroll_to_top()
+    voltar_ao_topo()

@@ -16,7 +16,12 @@ from sqlalchemy import text
 from app.database import session_maker
 
 
-def create_session(user_id: int, expires_at: datetime) -> str:
+def hash_token(token: str) -> str:
+    """Hash SHA-256 (hex) do token opaco; só o hash vai ao banco."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def criar_sessao(usuario_id: int, expira_em: datetime) -> str:
     """
     Cria uma sessão para o usuário e retorna o token opaco a ser enviado ao
     navegador como cookie.
@@ -24,7 +29,7 @@ def create_session(user_id: int, expires_at: datetime) -> str:
     Sessões expiradas do usuário são removidas antes de criar a nova sessão.
     """
     token = secrets.token_urlsafe(64)
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    token_hash = hash_token(token)
 
     with session_maker() as session:
         session.begin()
@@ -33,7 +38,7 @@ def create_session(user_id: int, expires_at: datetime) -> str:
             text(
                 "DELETE FROM sessao WHERE id_usuario = :id_usuario AND expira_em <= NOW()"
             ),
-            {"id_usuario": user_id},
+            {"id_usuario": usuario_id},
         )
         _ = session.execute(
             text(
@@ -44,8 +49,8 @@ def create_session(user_id: int, expires_at: datetime) -> str:
             ),
             {
                 "token_hash": token_hash,
-                "id_usuario": user_id,
-                "expira_em": expires_at,
+                "id_usuario": usuario_id,
+                "expira_em": expira_em,
             },
         )
 
@@ -53,7 +58,7 @@ def create_session(user_id: int, expires_at: datetime) -> str:
     return token
 
 
-def delete_session_by_hash(token_hash: str) -> None:
+def excluir_sessao_por_hash(token_hash: str) -> None:
     """Remove uma sessão pelo hash do token, ignorando inexistência."""
     with session_maker() as session:
         session.begin()
@@ -66,7 +71,7 @@ def delete_session_by_hash(token_hash: str) -> None:
         session.commit()
 
 
-def get_user_id_by_session(token_hash: str) -> int | None:
+def obter_id_usuario_por_sessao(token_hash: str) -> int | None:
     """
     Retorna o ``id_usuario`` da sessão apontada pelo hash do token, ou
     ``None`` se a sessão não existir/estiver expirada. Sessões expiradas são
@@ -86,7 +91,7 @@ def get_user_id_by_session(token_hash: str) -> int | None:
         return None
 
     if row["expira_em"] <= datetime.now(UTC):
-        delete_session_by_hash(token_hash)
+        excluir_sessao_por_hash(token_hash)
         return None
 
     return row["id_usuario"]

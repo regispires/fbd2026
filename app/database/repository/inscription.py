@@ -8,25 +8,26 @@ ciclo de importação (ex.: ``user.py`` as usa nas anotações de retorno dos
 seus getters de inscrições).
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import text
 
 from app.database import session_maker
-from app.database.repository import eh_pdf
+from app.database.repository import eh_pdf, para_bytes
 from app.exceptions import (
-    CannotApproveOwnInscription,
-    InscriptionNotPending,
-    InscriptionProofNotPdf,
+    AprovacaoPropriaProibida,
+    ComprovanteNaoEhPdf,
+    InscricaoNaoPendente,
 )
 
 Status = Literal["pendente", "confirmada", "cancelada"]
 
 
 @dataclass
-class EventInscription:
+class InscricaoEvento:
     """
     Linha da ``inscricao_evento``.
 
@@ -36,53 +37,75 @@ class EventInscription:
     Os campos extras de exibição são opcionais.
     """
 
-    user_id: int
-    event_id: int
+    usuario_id: int
+    evento_id: int
     data_inscricao: datetime
     status: str
     valor: float | None = None
     meia: bool = False
     comprovante_usuario: bytes | None = None
     comentario_administrador: str | None = None
-    user_nome: str | None = None
-    event_nome: str | None = None
+    usuario_nome: str | None = None
+    evento_nome: str | None = None
     data_hora_inicio: datetime | None = None
     data_hora_fim: datetime | None = None
 
-    def approve(self, by_user_id: int) -> None:
+    @classmethod
+    def de_linha(cls, row: Mapping[str, Any]) -> "InscricaoEvento":
+        """
+        Constrói uma ``InscricaoEvento`` de uma linha; as colunas de exibição
+        (nomes, datas do evento) são opcionais e ausentes quando a consulta
+        não as seleciona.
+        """
+        return cls(
+            usuario_id=row["id_usuario"],
+            evento_id=row["id_evento"],
+            data_inscricao=row["data_inscricao"],
+            status=row["status"],
+            valor=row["valor"],
+            meia=row["meia"],
+            comprovante_usuario=para_bytes(row["comprovante_usuario"]),
+            comentario_administrador=row["comentario_administrador"],
+            usuario_nome=row.get("usuario_nome"),
+            evento_nome=row.get("evento_nome"),
+            data_hora_inicio=row.get("data_hora_inicio"),
+            data_hora_fim=row.get("data_hora_fim"),
+        )
+
+    def aprovar(self, por_usuario_id: int) -> None:
         """
         Aprova uma inscrição pendente (regra: administrador).
 
-        Levanta ``CannotApproveOwnInscription`` se o avaliador for o
+        Levanta ``AprovacaoPropriaProibida`` se o avaliador for o
         próprio solicitante.
         """
-        if by_user_id == self.user_id:
-            raise CannotApproveOwnInscription
+        if por_usuario_id == self.usuario_id:
+            raise AprovacaoPropriaProibida
         if self.status != "pendente":
-            raise InscriptionNotPending
-        self._set_status("confirmada")
+            raise InscricaoNaoPendente
+        self._definir_status("confirmada")
 
-    def reject(self, by_user_id: int) -> None:
+    def recusar(self, por_usuario_id: int) -> None:
         """
         Recusa (soft cancel) uma inscrição pendente.
 
-        Levanta ``CannotApproveOwnInscription`` se o avaliador for o
+        Levanta ``AprovacaoPropriaProibida`` se o avaliador for o
         próprio solicitante.
         """
-        if by_user_id == self.user_id:
-            raise CannotApproveOwnInscription
+        if por_usuario_id == self.usuario_id:
+            raise AprovacaoPropriaProibida
         if self.status != "pendente":
-            raise InscriptionNotPending
-        self._set_status("cancelada")
+            raise InscricaoNaoPendente
+        self._definir_status("cancelada")
 
-    def cancel(self) -> None:
+    def cancelar(self) -> None:
         """
         Cancela a inscrição (usuário). Permitido para ``pendente`` ou
         ``confirmada``. O cancelamento é um *soft cancel*.
         """
-        self._set_status("cancelada")
+        self._definir_status("cancelada")
 
-    def update(
+    def atualizar(
         self, meia: bool, valor: float, comprovante_usuario: bytes | None
     ) -> None:
         """
@@ -91,9 +114,9 @@ class EventInscription:
         precisa ser PDF.
         """
         if self.status != "pendente":
-            raise InscriptionNotPending
+            raise InscricaoNaoPendente
         if comprovante_usuario is not None and not eh_pdf(comprovante_usuario):
-            raise InscriptionProofNotPdf
+            raise ComprovanteNaoEhPdf
         query = text(
             """
             UPDATE inscricao_evento
@@ -111,8 +134,8 @@ class EventInscription:
                     "meia": meia,
                     "valor": valor,
                     "comprovante_usuario": comprovante_usuario,
-                    "user_id": self.user_id,
-                    "event_id": self.event_id,
+                    "user_id": self.usuario_id,
+                    "event_id": self.evento_id,
                 },
             )
             session.commit()
@@ -120,7 +143,7 @@ class EventInscription:
         self.valor = valor
         self.comprovante_usuario = comprovante_usuario
 
-    def set_comentario(self, comentario_administrador: str) -> None:
+    def definir_comentario(self, comentario_administrador: str) -> None:
         """Registra o comentário do administrador após avaliar a inscrição."""
         query = text(
             """
@@ -135,14 +158,14 @@ class EventInscription:
                 query,
                 {
                     "comentario_administrador": comentario_administrador,
-                    "user_id": self.user_id,
-                    "event_id": self.event_id,
+                    "user_id": self.usuario_id,
+                    "event_id": self.evento_id,
                 },
             )
             session.commit()
         self.comentario_administrador = comentario_administrador
 
-    def _set_status(self, status: Status) -> None:
+    def _definir_status(self, status: Status) -> None:
         query = text(
             """
             UPDATE inscricao_evento
@@ -156,8 +179,8 @@ class EventInscription:
                 query,
                 {
                     "status": status,
-                    "user_id": self.user_id,
-                    "event_id": self.event_id,
+                    "user_id": self.usuario_id,
+                    "event_id": self.evento_id,
                 },
             )
             session.commit()
@@ -165,7 +188,7 @@ class EventInscription:
 
 
 @dataclass
-class ActivityAttendance:
+class PresencaAtividade:
     """
     Linha da ``presenca_atividade``, com detalhes para exibição.
 
@@ -173,9 +196,21 @@ class ActivityAttendance:
     atividade; não possui status nem histórico — a linha existe ou não.
     """
 
-    user_id: int
-    event_id: int
+    usuario_id: int
+    evento_id: int
     id_atividade: int
-    event_nome: str | None = None
-    activity_nome: str | None = None
+    evento_nome: str | None = None
+    atividade_nome: str | None = None
     sala: str | None = None
+
+    @classmethod
+    def de_linha(cls, row: Mapping[str, Any]) -> "PresencaAtividade":
+        """Constrói uma ``PresencaAtividade`` de uma linha (com exibição opcional)."""
+        return cls(
+            usuario_id=row["id_usuario"],
+            evento_id=row["id_evento"],
+            id_atividade=row["id_atividade"],
+            evento_nome=row.get("evento_nome"),
+            atividade_nome=row.get("atividade_nome"),
+            sala=row.get("sala"),
+        )

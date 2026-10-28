@@ -13,17 +13,17 @@ import json
 from fastapi import Request
 from nicegui import ui
 
-from app.auth import COOKIE_NAME, cookie_manager
-from app.pages.layout import page
+from app.auth import NOME_COOKIE, gerenciador_sessao
+from app.pages.layout import pagina
 
 
 # tela dedicada: sem o cabeçalho padrão da aplicação,
 # o formulário ocupa toda a altura
-@page("/login", with_header=False)
-def login_page(request: Request):
+@pagina("/login", com_cabecalho=False)
+def pagina_login(request: Request):
     # Se já existe uma sessão válida, não exibir o formulário
-    cookie = request.cookies.get(COOKIE_NAME)
-    if cookie and cookie_manager.verificar_sessao(cookie):
+    cookie = request.cookies.get(NOME_COOKIE)
+    if cookie and gerenciador_sessao.verificar_sessao(cookie):
         ui.navigate.to("/")
         return
 

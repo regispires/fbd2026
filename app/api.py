@@ -13,38 +13,38 @@ from fastapi import Depends, HTTPException
 from fastapi.responses import Response
 from nicegui import app
 
-from app.auth import get_current_user
-from app.database.repository.inscription_list import get_inscription
-from app.database.repository.user import User
+from app.auth import obter_usuario
+from app.database.repository.inscription_list import obter_inscricao
+from app.database.repository.user import Usuario
 
 
-@app.get("/api/registrations/{event_id}/{user_id}/comprovante")
-def download_comprovante(
-    event_id: int,
-    user_id: int,
-    user: Annotated[User, Depends(get_current_user)],
+@app.get("/api/registrations/{evento_id}/{usuario_id}/comprovante")
+def baixar_comprovante(
+    evento_id: int,
+    usuario_id: int,
+    usuario: Annotated[Usuario, Depends(obter_usuario)],
 ) -> Response:
     """
     Devolve o comprovante anexado à inscrição como download.
 
     Acesso restrito ao dono da inscrição ou a administradores; sem
-    sessão válida o ``cookie_manager`` redireciona para ``/login``.
+    sessão válida o ``gerenciador_sessao`` redireciona para ``/login``.
     """
-    if user.id != user_id and user.papel != "administrador":
+    if usuario.id != usuario_id and usuario.papel != "administrador":
         raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail="Acesso negado")
 
-    inscription = get_inscription(user_id, event_id)
-    if inscription is None or inscription.comprovante_usuario is None:
+    inscricao = obter_inscricao(usuario_id, evento_id)
+    if inscricao is None or inscricao.comprovante_usuario is None:
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND, detail="Comprovante não encontrado"
         )
 
     return Response(
-        content=inscription.comprovante_usuario,
+        content=inscricao.comprovante_usuario,
         media_type="application/octet-stream",
         headers={
             "Content-Disposition": (
-                f'attachment; filename="comprovante-evento-{event_id}-usuario-{user_id}"'
+                f'attachment; filename="comprovante-evento-{evento_id}-usuario-{usuario_id}"'
             )
         },
     )

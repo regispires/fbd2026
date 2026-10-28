@@ -2,10 +2,10 @@
 Operações sobre a entidade de usuário.
 """
 
-from collections.abc import Callable
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
-from typing import Literal
+from typing import Any, Literal
 
 from pwdlib import PasswordHash
 from pwdlib.exceptions import UnknownHashError
@@ -14,15 +14,14 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.database import session_maker
-from app.database.repository import as_bytes
 from app.database.repository.inscription import (
-    ActivityAttendance,
-    EventInscription,
+    InscricaoEvento,
+    PresencaAtividade,
 )
 from app.exceptions import (
-    DuplicateUserRegistration,
-    UserHasDependencies,
-    UserNotFound,
+    UsuarioComDependencias,
+    UsuarioNaoEncontrado,
+    UsuarioRepetido,
 )
 
 # Utilizando o algoritmo Argon2Id para criptografar as senhas
@@ -32,7 +31,7 @@ Papel = Literal["administrador", "associado"]
 
 
 @dataclass
-class User:
+class Usuario:
     """
     Representa a tabela `usuario`
     """
@@ -45,7 +44,16 @@ class User:
     papel: Papel
     idade: int
 
-    def update(self, nome: str, email: str, cpf: str, data_nascimento: date) -> None:
+    @classmethod
+    def de_linha(cls, row: Mapping[str, Any]) -> "Usuario":
+        """Constrói um ``Usuario`` de uma linha de ``usuario_com_idade``."""
+        return cls(**dict(row))
+
+    def atualizar(self, nome: str, email: str, cpf: str, data_nascimento: date) -> None:
+        """
+        Atualiza os dados do usuário. A unicidade de CPF e e-mail é garantida
+        pelo banco; violação vira ``UsuarioRepetido``.
+        """
         query = text(
             """
             UPDATE usuario
@@ -67,10 +75,10 @@ class User:
                     },
                 )
             except IntegrityError as e:
-                raise DuplicateUserRegistration from e
+                raise UsuarioRepetido from e
             session.commit()
 
-    def delete(self) -> bool:
+    def excluir(self) -> bool:
         """
         Exclui o usuário, retornando ``True`` se uma linha foi removida.
 
@@ -82,7 +90,7 @@ class User:
             try:
                 result = session.execute(query, {"id": self.id})
             except IntegrityError as e:
-                raise UserHasDependencies from e
+                raise UsuarioComDependencias from e
             if result.rowcount != 1:
                 session.rollback()
                 return False
@@ -90,14 +98,14 @@ class User:
                 session.commit()
                 return True
 
-    def get_event_inscriptions(self) -> list[EventInscription]:
+    def listar_inscricoes(self) -> list[InscricaoEvento]:
         """Inscrições do usuário em eventos, com dados do evento para exibição."""
 
         query = text(
             """
             SELECT i.id_usuario, i.id_evento, i.data_inscricao, i.status,
                    i.valor, i.meia, i.comprovante_usuario, i.comentario_administrador,
-                   e.nome AS event_nome, e.data_hora_inicio, e.data_hora_fim
+                   e.nome AS evento_nome, e.data_hora_inicio, e.data_hora_fim
             FROM inscricao_evento i
             JOIN evento e ON e.id = i.id_evento
             WHERE i.id_usuario = :id_usuario
@@ -107,75 +115,38 @@ class User:
 
         with session_maker() as session:
             rows = session.execute(query, {"id_usuario": self.id}).mappings()
-            return [
-                EventInscription(
-                    user_id=r["id_usuario"],
-                    event_id=r["id_evento"],
-                    data_inscricao=r["data_inscricao"],
-                    status=r["status"],
-                    valor=r["valor"],
-                    meia=r["meia"],
-                    comprovante_usuario=as_bytes(r["comprovante_usuario"]),
-                    comentario_administrador=r["comentario_administrador"],
-                    event_nome=r["event_nome"],
-                    data_hora_inicio=r["data_hora_inicio"],
-                    data_hora_fim=r["data_hora_fim"],
-                )
-                for r in rows
-            ]
+            return [InscricaoEvento.de_linha(r) for r in rows]
 
-    def get_attendances(self, event_id: int | None = None) -> list[ActivityAttendance]:
+    def listar_presencas(self, evento_id: int | None = None) -> list[PresencaAtividade]:
         """
         Atividades em que o usuário esteve presente, com dados do evento e da
-        atividade. ``event_id`` é opcional e restringe a busca a um evento.
+        atividade. ``evento_id`` é opcional e restringe a busca a um evento.
         """
 
-        event_clause = "AND p.id_evento = :event_id" if event_id is not None else ""
+        evento_clause = "AND p.id_evento = :evento_id" if evento_id is not None else ""
         query = text(
             f"""
             SELECT p.id_usuario, p.id_evento, p.id_atividade,
-                   e.nome AS event_nome,
-                   a.nome AS activity_nome, a.sala
+                   e.nome AS evento_nome,
+                   a.nome AS atividade_nome, a.sala
             FROM presenca_atividade p
             JOIN evento e ON e.id = p.id_evento
             JOIN atividade a ON a.id_evento = p.id_evento
                      AND a.id = p.id_atividade
-            WHERE p.id_usuario = :id_usuario {event_clause}
+            WHERE p.id_usuario = :id_usuario {evento_clause}
             ORDER BY p.id_evento, p.id_atividade
             """
         )
         params: dict[str, int] = {"id_usuario": self.id}
-        if event_id is not None:
-            params["event_id"] = event_id
+        if evento_id is not None:
+            params["evento_id"] = evento_id
 
         with session_maker() as session:
             rows = session.execute(query, params).mappings()
-            return [
-                ActivityAttendance(
-                    user_id=r["id_usuario"],
-                    event_id=r["id_evento"],
-                    id_atividade=r["id_atividade"],
-                    event_nome=r["event_nome"],
-                    activity_nome=r["activity_nome"],
-                    sala=r["sala"],
-                )
-                for r in rows
-            ]
+            return [PresencaAtividade.de_linha(r) for r in rows]
 
 
-@dataclass
-class UserList:
-    """Coleção de usuários para painéis administrativos da interface."""
-
-    items: list[User]
-    on_change: Callable
-
-    def reload(self) -> None:
-        self.items = get_users()
-        self.on_change()
-
-
-def get_users() -> list[User]:
+def listar_usuarios() -> list[Usuario]:
     """Todos os usuários, ordenados pelo nome (seleção de ministrantes)."""
     query = text(
         """
@@ -186,41 +157,41 @@ def get_users() -> list[User]:
         """
     )
     with session_maker() as session:
-        return [User(**dict(row)) for row in session.execute(query).mappings()]
+        return [Usuario.de_linha(row) for row in session.execute(query).mappings()]
 
 
-def get_user(user_id: int) -> User:
-    """Busca um usuário por id; lança ``UserNotFound`` se não existir."""
+def obter_usuario_por_id(usuario_id: int) -> Usuario:
+    """Busca um usuário por id; lança ``UsuarioNaoEncontrado`` se não existir."""
     query = text(
         """
         SELECT id, nome, cpf::text, email, data_nascimento,
                papel, idade::int
         FROM usuario_com_idade
-        WHERE id = :user_id
+        WHERE id = :usuario_id
         LIMIT 1
         """
     )
     with session_maker() as session:
-        row = session.execute(query, {"user_id": user_id}).mappings().first()
+        row = session.execute(query, {"usuario_id": usuario_id}).mappings().first()
     if row is None:
-        raise UserNotFound
-    return User(**dict(row))
+        raise UsuarioNaoEncontrado
+    return Usuario.de_linha(row)
 
 
-def create_user(
+def criar_usuario(
     nome: str,
     cpf: str,
     email: str,
-    password: str,
+    senha: str,
     data_nascimento: date,
     papel: Papel = "associado",
-) -> User:
+) -> Usuario:
     """
     Cria um usuário autenticável.
 
     A senha é armazenada apenas como hash (argon2id via pwdlib). A unicidade
     de CPF e e-mail é garantida pelo banco; violações viram
-    ``DuplicateUserRegistration``.
+    ``UsuarioRepetido``.
     """
 
     query = text(
@@ -241,20 +212,20 @@ def create_user(
                     "nome": nome,
                     "cpf": cpf,
                     "email": email,
-                    "senha_hash": pwd_context.hash(password),
+                    "senha_hash": pwd_context.hash(senha),
                     "papel": papel,
                     "data_nascimento": data_nascimento,
                 },
             )
         except IntegrityError as e:
-            raise DuplicateUserRegistration from e
+            raise UsuarioRepetido from e
         session.commit()
         row = result.mappings().first()
-    return User(**dict(row))
+    return Usuario.de_linha(row)
 
 
-def authenticate_user(email: str, password: str) -> User | None:
-    """Valida credenciais; retorna o ``User`` ou ``None`` se forem inválidas."""
+def autenticar_usuario(email: str, senha: str) -> Usuario | None:
+    """Valida credenciais; retorna o ``Usuario`` ou ``None`` se forem inválidas."""
 
     query = text(
         """
@@ -274,9 +245,9 @@ def authenticate_user(email: str, password: str) -> User | None:
     # mas evita ataques de temporização (https://pt.wikipedia.org/wiki/Ataque_de_temporiza%C3%A7%C3%A3o)
     senha_hash = row.pop("senha_hash", "")
     try:
-        ok = pwd_context.verify(password, senha_hash)
+        ok = pwd_context.verify(senha, senha_hash)
     except UnknownHashError:
         return None
     if not ok:
         return None
-    return User(**dict(row))
+    return Usuario.de_linha(row)

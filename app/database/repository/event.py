@@ -2,32 +2,51 @@
 Operações sobre a entidade de evento.
 """
 
-from collections.abc import Callable
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.database import session_maker
-from app.database.repository import ensure_timezone, parse_point
-from app.database.repository.activity import ActivityInput
-from app.exceptions import (
-    ActivityWithoutLecturer,
-    DuplicateEventRegistration,
-    DuplicateLecturer,
-    EventHasDependencies,
-    EventHasInscriptions,
-    EventNotFound,
-    EventWithoutActivity,
-    InvalidActivitySchedule,
-    InvalidEventSchedule,
-    VacancyBelowInscriptions,
+from app.database.repository import (
+    analisar_ponto,
+    contar_linhas,
+    contido_em,
+    garantir_timezone,
 )
+from app.database.repository.activity import EntradaAtividade
+from app.exceptions import (
+    AtividadeSemMinistrante,
+    EventoComDependencias,
+    EventoComInscricoes,
+    EventoNaoEncontrado,
+    EventoRepetido,
+    EventoSemAtividade,
+    HorarioAtividadeInvalido,
+    HorarioEventoInvalido,
+    MinistranteRepetido,
+    VagasAbaixoInscricoes,
+)
+
+# colunas + contagem de inscrições ativas, compartilhadas pelas consultas
+# de listagem e de detalhe
+_COLUNAS_EVENTO = """
+    SELECT id, nome, descricao, data_hora_inicio, data_hora_fim,
+           classificacao_indicativa, vagas, valor, localizacao::text,
+           banner, banner_thumbnail,
+           (SELECT COUNT(i.id_usuario)
+            FROM inscricao_evento i
+            WHERE i.id_evento = evento.id
+              AND i.status <> 'cancelada') AS inscritas
+    FROM evento
+"""
 
 
 @dataclass
-class Event:
+class Evento:
     """
     Representa a tabela ``evento``.
 
@@ -56,15 +75,21 @@ class Event:
     inscritas: int | None = None
 
     def __post_init__(self) -> None:
-        self._check_localizacao_pair()
+        _exigir_par_lat_lng(self.latitude, self.longitude)
 
-    def _check_localizacao_pair(self) -> None:
-        if (self.latitude is None) != (self.longitude is None):
-            raise ValueError(
-                "latitude e longitude precisam estar ambos definidos ou ambos nulos"
-            )
+    @classmethod
+    def de_linha(cls, row: Mapping[str, Any]) -> "Evento":
+        """Constrói um ``Evento`` de uma linha, convertendo o POINT para floats."""
+        row = dict(row)
+        longitude, latitude = analisar_ponto(row.pop("localizacao"))
+        return cls(latitude=latitude, longitude=longitude, **row)
 
-    def update(
+    @property
+    def valor_meia(self) -> float:
+        """Preço da meia-entrada (regra: metade do valor cheio)."""
+        return round(self.valor / 2, 2)
+
+    def atualizar(
         self,
         nome: str,
         descricao: str | None,
@@ -82,16 +107,16 @@ class Event:
         Atualiza o evento; o par latitude/longitude segue a regra ambos ou
         nenhum. Regras validadas na mesma transação da escrita:
 
-        - o início precisa ser anterior ao fim (``InvalidEventSchedule``);
+        - o início precisa ser anterior ao fim (``HorarioEventoInvalido``);
         - as vagas não podem ficar menores que o número de inscrições ativas
-          (``VacancyBelowInscriptions``);
+          (``VagasAbaixoInscricoes``);
         - o novo intervalo de datas precisa continuar contendo todas as
-          atividades existentes (``InvalidActivitySchedule``).
+          atividades existentes (``HorarioAtividadeInvalido``).
 
         ``banner`` e ``banner_thumbnail`` são URLs; ``None`` limpa a coluna.
         """
-        _require_lat_lng_pair(latitude, longitude)
-        _require_valid_schedule(data_hora_inicio, data_hora_fim)
+        _exigir_par_lat_lng(latitude, longitude)
+        _exigir_horario_valido(data_hora_inicio, data_hora_fim)
         if vagas < 1:
             raise ValueError("o evento precisa de pelo menos uma vaga")
 
@@ -130,21 +155,23 @@ class Event:
             WHERE id = :id
             """
         )
-        inicio = ensure_timezone(data_hora_inicio)
-        fim = ensure_timezone(data_hora_fim)
+        inicio = garantir_timezone(data_hora_inicio)
+        fim = garantir_timezone(data_hora_fim)
         with session_maker() as session:
             session.begin()
             inscritas = session.execute(inscritas_query, {"id": self.id}).scalar_one()
             if vagas < inscritas:
-                raise VacancyBelowInscriptions
+                raise VagasAbaixoInscricoes
             for atividade in session.execute(
                 atividades_query, {"id": self.id}
             ).mappings():
-                if (
-                    atividade["data_hora_inicio"] < inicio
-                    or atividade["data_hora_fim"] > fim
+                if not contido_em(
+                    atividade["data_hora_inicio"],
+                    atividade["data_hora_fim"],
+                    inicio,
+                    fim,
                 ):
-                    raise InvalidActivitySchedule
+                    raise HorarioAtividadeInvalido
             try:
                 _ = session.execute(
                     query,
@@ -164,31 +191,30 @@ class Event:
                     },
                 )
             except IntegrityError as e:
-                raise DuplicateEventRegistration from e
+                raise EventoRepetido from e
             session.commit()
 
-    def delete(self) -> bool:
+    def excluir(self) -> bool:
         """
         Exclui o evento, retornando ``True`` se uma linha foi removida.
 
         A exclusão é bloqueada quando o evento possui ao menos uma inscrição
-        (de qualquer status, ``EventHasInscriptions``). Sem inscrições, as
+        (de qualquer status, ``EventoComInscricoes``). Sem inscrições, as
         dependências do evento (presenças, ministrantes e atividades) são
         removidas junto na mesma transação; uma violação de chave
         estrangeira — p.ex. uma inscrição criada entre a verificação e a
-        exclusão — é traduzida para ``EventHasDependencies``.
+        exclusão — é traduzida para ``EventoComDependencias``.
         """
-        count_query = text(
+        inscritas = contar_linhas(
             """
             SELECT COUNT(i.id_usuario) AS total
             FROM inscricao_evento i
             WHERE i.id_evento = :id
-            """
+            """,
+            {"id": self.id},
         )
-        with session_maker() as session:
-            inscritas = session.execute(count_query, {"id": self.id}).scalar_one()
         if inscritas > 0:
-            raise EventHasInscriptions
+            raise EventoComInscricoes
 
         query = text("DELETE FROM evento WHERE id = :id RETURNING id")
         with session_maker() as session:
@@ -196,19 +222,19 @@ class Event:
             try:
                 # ordem importa: presença e ministrantes referenciam
                 # atividades, que referenciam o evento
-                for table in ("presenca_atividade", "ministra_atividade", "atividade"):
+                for tabela in ("presenca_atividade", "ministra_atividade", "atividade"):
                     _ = session.execute(
-                        text(f"DELETE FROM {table} WHERE id_evento = :id"),
+                        text(f"DELETE FROM {tabela} WHERE id_evento = :id"),
                         {"id": self.id},
                     )
                 result = session.execute(query, {"id": self.id})
             except IntegrityError as e:
-                raise EventHasDependencies from e
+                raise EventoComDependencias from e
             session.commit()
             return result.rowcount == 1
 
 
-def _require_lat_lng_pair(latitude: float | None, longitude: float | None) -> None:
+def _exigir_par_lat_lng(latitude: float | None, longitude: float | None) -> None:
     """O POINT é atômico: o par de coordenadas vem inteiro ou não vem."""
     if (latitude is None) != (longitude is None):
         raise ValueError(
@@ -216,85 +242,44 @@ def _require_lat_lng_pair(latitude: float | None, longitude: float | None) -> No
         )
 
 
-def _require_valid_schedule(
-    data_hora_inicio: datetime, data_hora_fim: datetime
-) -> None:
+def _exigir_horario_valido(data_hora_inicio: datetime, data_hora_fim: datetime) -> None:
     """O horário do evento precisa ter início anterior ao fim."""
-    if ensure_timezone(data_hora_inicio) >= ensure_timezone(data_hora_fim):
-        raise InvalidEventSchedule
+    if garantir_timezone(data_hora_inicio) >= garantir_timezone(data_hora_fim):
+        raise HorarioEventoInvalido
 
 
-def _row_to_event(row: dict) -> Event:
-    """Constrói um ``Event`` de uma linha, convertendo o POINT para floats."""
-    longitude, latitude = parse_point(row.pop("localizacao"))
-    return Event(latitude=latitude, longitude=longitude, **row)
+def listar_eventos() -> list[Evento]:
+    """Todos os eventos, ordenados pelo início (cartões da página inicial)."""
+    query = text(f"{_COLUNAS_EVENTO} ORDER BY data_hora_inicio")
+    with session_maker() as session:
+        rows = session.execute(query).mappings()
+    return [Evento.de_linha(row) for row in rows]
 
 
-@dataclass
-class EventList:
-    """Coleção de eventos para a interface."""
-
-    items: list[Event]
-    on_change: Callable
-
-    def reload(self) -> None:
-        query = text(
-            """
-            SELECT id, nome, descricao, data_hora_inicio, data_hora_fim,
-                   classificacao_indicativa, vagas, valor, localizacao::text,
-                   banner, banner_thumbnail,
-                   (SELECT COUNT(i.id_usuario)
-                    FROM inscricao_evento i
-                    WHERE i.id_evento = evento.id
-                      AND i.status <> 'cancelada') AS inscritas
-            FROM evento
-            ORDER BY data_hora_inicio
-            """
-        )
-        with session_maker() as session:
-            self.items = [
-                _row_to_event(dict(row)) for row in session.execute(query).mappings()
-            ]
-        self.on_change()
-
-
-def get_event(event_id: int) -> Event:
+def obter_evento(evento_id: int) -> Evento:
     """
-    Busca um evento por id; lança ``EventNotFound`` se não existir.
+    Busca um evento por id; lança ``EventoNaoEncontrado`` se não existir.
 
     Também preenche ``inscritas`` (inscrições não canceladas), usado pela
     página de detalhes para mostrar as vagas disponíveis.
     """
-    query = text(
-        """
-        SELECT id, nome, descricao, data_hora_inicio, data_hora_fim,
-               classificacao_indicativa, vagas, valor, localizacao::text,
-               banner, banner_thumbnail,
-               (SELECT COUNT(i.id_usuario)
-                FROM inscricao_evento i
-                WHERE i.id_evento = evento.id
-                  AND i.status <> 'cancelada') AS inscritas
-        FROM evento
-        WHERE id = :event_id
-        LIMIT 1
-        """
-    )
+    query = text(f"{_COLUNAS_EVENTO} WHERE id = :evento_id LIMIT 1")
     with session_maker() as session:
-        row = session.execute(query, {"event_id": event_id}).mappings().first()
+        row = session.execute(query, {"evento_id": evento_id}).mappings().first()
     if row is None:
-        raise EventNotFound
-    return _row_to_event(dict(row))
+        raise EventoNaoEncontrado
+    return Evento.de_linha(row)
 
 
 @dataclass
-class EventRaisedValue:
+class ValorArrecadado:
     """Linha agregada do valor das inscrições de um evento, por status."""
 
     status: str
     total: float
 
 
-def get_event_raised_values(event_id: int) -> list[EventRaisedValue]:
+def obter_valores_arrecadados(evento_id: int) -> list[ValorArrecadado]:
     """
     Valor das inscrições de um evento agrupado por status (regra de
     negócio para o detalhamento administrativo em ``/events/{id}``):
@@ -310,17 +295,17 @@ def get_event_raised_values(event_id: int) -> list[EventRaisedValue]:
         """
         SELECT status, COALESCE(SUM(valor), 0) AS total
         FROM inscricao_evento
-        WHERE id_evento = :event_id
+        WHERE id_evento = :evento_id
         GROUP BY status
         ORDER BY status
         """
     )
     with session_maker() as session:
-        rows = session.execute(query, {"event_id": event_id}).mappings()
-    return [EventRaisedValue(status=r["status"], total=float(r["total"])) for r in rows]
+        rows = session.execute(query, {"evento_id": evento_id}).mappings()
+    return [ValorArrecadado(status=r["status"], total=float(r["total"])) for r in rows]
 
 
-def create_event(
+def criar_evento(
     nome: str,
     descricao: str | None,
     data_hora_inicio: datetime,
@@ -330,41 +315,44 @@ def create_event(
     valor: float,
     latitude: float | None = None,
     longitude: float | None = None,
-    activities: list[ActivityInput] | None = None,
+    atividades: list[EntradaAtividade] | None = None,
     banner: str | None = None,
     banner_thumbnail: str | None = None,
-) -> Event:
+) -> Evento:
     """
     Cria um evento e suas atividades na mesma transação.
 
     Um evento precisa ter pelo menos uma atividade (regra de negócio);
-    ``activities`` vazia ou ``None`` levanta ``EventWithoutActivity``. O
+    ``atividades`` vazia ou ``None`` levanta ``EventoSemAtividade``. O
     horário de cada atividade deve estar contido no horário do evento
-    (``InvalidActivitySchedule``) e cada atividade precisa de ao menos um
-    ministrante (``ActivityWithoutLecturer``); os vínculos de ministrantes
+    (``HorarioAtividadeInvalido``) e cada atividade precisa de ao menos um
+    ministrante (``AtividadeSemMinistrante``); os vínculos de ministrantes
     são criados na mesma transação.
 
-    ``nome`` é único no banco (violação vira ``DuplicateEventRegistration``);
+    ``nome`` é único no banco (violação vira ``EventoRepetido``);
     os ids das atividades são gerados pelo banco. A localização é opcional,
     mas o par lat/lng deve vir inteiro ou não vir. O horário precisa ter
-    início anterior ao fim (``InvalidEventSchedule``) e o evento precisa de
+    início anterior ao fim (``HorarioEventoInvalido``) e o evento precisa de
     pelo menos uma vaga.
     """
-    _require_lat_lng_pair(latitude, longitude)
-    _require_valid_schedule(data_hora_inicio, data_hora_fim)
+    _exigir_par_lat_lng(latitude, longitude)
+    _exigir_horario_valido(data_hora_inicio, data_hora_fim)
     if vagas < 1:
         raise ValueError("o evento precisa de pelo menos uma vaga")
-    if not activities:
-        raise EventWithoutActivity
-    if any(not activity.lecturers for activity in activities):
-        raise ActivityWithoutLecturer
-    for activity in activities:
-        if ensure_timezone(activity.data_hora_inicio) < ensure_timezone(
-            data_hora_inicio
-        ) or ensure_timezone(activity.data_hora_fim) > ensure_timezone(data_hora_fim):
-            raise InvalidActivitySchedule
+    if not atividades:
+        raise EventoSemAtividade
+    if any(not entrada.ministrantes for entrada in atividades):
+        raise AtividadeSemMinistrante
+    for entrada in atividades:
+        if not contido_em(
+            entrada.data_hora_inicio,
+            entrada.data_hora_fim,
+            data_hora_inicio,
+            data_hora_fim,
+        ):
+            raise HorarioAtividadeInvalido
 
-    event_query = text(
+    evento_query = text(
         """
         INSERT INTO evento
             (nome, descricao, data_hora_inicio, data_hora_fim,
@@ -383,7 +371,7 @@ def create_event(
                   banner, banner_thumbnail
         """
     )
-    activity_query = text(
+    atividade_query = text(
         """
         INSERT INTO atividade
             (id_evento, nome, descricao, sala, vagas, data_hora_inicio, data_hora_fim)
@@ -393,7 +381,7 @@ def create_event(
         RETURNING id
         """
     )
-    lecturer_query = text(
+    ministrante_query = text(
         """
         INSERT INTO ministra_atividade
             (id_usuario, id_evento, id_atividade, mini_bio, instituicao, link_lattes)
@@ -405,12 +393,12 @@ def create_event(
         session.begin()
         try:
             result = session.execute(
-                event_query,
+                evento_query,
                 {
                     "nome": nome,
                     "descricao": descricao,
-                    "data_hora_inicio": ensure_timezone(data_hora_inicio),
-                    "data_hora_fim": ensure_timezone(data_hora_fim),
+                    "data_hora_inicio": garantir_timezone(data_hora_inicio),
+                    "data_hora_fim": garantir_timezone(data_hora_fim),
                     "classificacao_indicativa": classificacao_indicativa,
                     "vagas": vagas,
                     "valor": valor,
@@ -421,43 +409,35 @@ def create_event(
                 },
             )
         except IntegrityError as e:
-            raise DuplicateEventRegistration from e
+            raise EventoRepetido from e
         # consome o RETURNING antes de executar as demais statements na
         # mesma conexão (o cursor não aceita outra query com resultado
         # pendente)
-        event_row = dict(result.mappings().first())
-        new_id: int = event_row["id"]
-        for activity in activities:
-            activity_result = session.execute(
-                activity_query,
-                {
-                    "id_evento": new_id,
-                    "nome": activity.nome,
-                    "descricao": activity.descricao,
-                    "sala": activity.sala,
-                    "vagas": activity.vagas,
-                    "data_hora_inicio": ensure_timezone(activity.data_hora_inicio),
-                    "data_hora_fim": ensure_timezone(activity.data_hora_fim),
-                },
-            )
+        evento_row = dict(result.mappings().first())
+        novo_id: int = evento_row["id"]
+        for entrada in atividades:
+            params = {"id_evento": novo_id, **entrada.parametros()}
+            params["data_hora_inicio"] = garantir_timezone(entrada.data_hora_inicio)
+            params["data_hora_fim"] = garantir_timezone(entrada.data_hora_fim)
+            atividade_result = session.execute(atividade_query, params)
             # consome o RETURNING antes de executar as demais statements na
             # mesma conexão (o cursor não aceita outra query com resultado
             # pendente)
-            activity_id: int = activity_result.scalar_one()
-            for entry in activity.lecturers:
+            atividade_id: int = atividade_result.scalar_one()
+            for ministrante in entrada.ministrantes:
                 try:
                     _ = session.execute(
-                        lecturer_query,
+                        ministrante_query,
                         {
-                            "id_usuario": entry.user.id,
-                            "id_evento": new_id,
-                            "id_atividade": activity_id,
-                            "mini_bio": entry.mini_bio,
-                            "instituicao": entry.instituicao,
-                            "link_lattes": entry.link_lattes,
+                            "id_usuario": ministrante.usuario.id,
+                            "id_evento": novo_id,
+                            "id_atividade": atividade_id,
+                            "mini_bio": ministrante.mini_bio,
+                            "instituicao": ministrante.instituicao,
+                            "link_lattes": ministrante.link_lattes,
                         },
                     )
                 except IntegrityError as e:
-                    raise DuplicateLecturer from e
+                    raise MinistranteRepetido from e
         session.commit()
-    return _row_to_event(event_row)
+    return Evento.de_linha(evento_row)

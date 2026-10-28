@@ -1,150 +1,171 @@
 """
 Página de detalhes de um evento: banner, nome, descrição, data, localização,
-valor, vagas disponíveis e a programação de atividades.
+valor, vagas disponíveis e a programação de atividades. Também abriga os
+dialogs administrativos do evento: criação (com atividades e ministrantes),
+edição e exclusão.
 
 A página é pública: a seção de inscrição se adapta ao estado do usuário
 (não logado, já inscrito, evento lotado) e abre um dialog para escolher
 valor cheio ou meia-entrada e anexar o comprovante.
 """
 
-from datetime import datetime
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends
 from nicegui import events, ui
 from nicegui.elements.upload_files import FileUpload
 
-from app.auth import get_optional_current_user
-from app.database.repository.activity import Activity, get_event_activities
-from app.database.repository.event import Event, get_event
+from app.auth import eh_administrador, obter_usuario_opcional
+from app.database.repository.activity import (
+    Atividade,
+    EntradaAtividade,
+    listar_atividades_com_ministrantes,
+)
+from app.database.repository.event import (
+    Evento,
+    criar_evento,
+    obter_evento,
+)
 from app.database.repository.inscription_list import (
-    get_inscription,
-    register_user_for_event,
+    inscrever_usuario_evento,
+    obter_inscricao,
 )
-from app.database.repository.user import User
+from app.database.repository.user import Usuario, listar_usuarios
 from app.exceptions import (
-    AgeBelowClassification,
-    DuplicateEventRegistration,
-    EventHasDependencies,
-    EventHasInscriptions,
-    EventNotFound,
-    InscriptionProofNotPdf,
-    InvalidActivitySchedule,
-    NoMoreVacancy,
-    VacancyBelowInscriptions,
+    AtividadeSemMinistrante,
+    ComprovanteNaoEhPdf,
+    EventoComDependencias,
+    EventoComInscricoes,
+    EventoNaoEncontrado,
+    EventoRepetido,
+    HorarioAtividadeInvalido,
+    IdadeAbaixoClassificacao,
+    MinistranteRepetido,
+    SemVagas,
+    VagasAbaixoInscricoes,
 )
-from app.pages.event_form import (
-    campos_evento,
+from app.forms.atividade import (
+    FormularioAtividade,
+    coletar_atividade,
+    conectar_atividade,
+    formulario_atividade,
+)
+from app.forms.evento import (
     coletar_valores,
     conectar_validacao_evento,
-    valores_evento,
+    formulario_evento,
+    limites_do_formulario,
 )
-from app.pages.layout import formatar_moeda, page, scroll_to_top, upload_comprovante
+from app.forms.ministrante import SeletorMinistrantes, seletor_ministrantes
+from app.modelos import ValoresEvento
+from app.pages.layout import (
+    data_hora,
+    dialogo_confirmacao,
+    formatar_moeda,
+    horario_atividade,
+    linha_de_icones,
+    nao_encontrado,
+    pagina,
+    upload_comprovante,
+    voltar_ao_topo,
+)
 
 
-def _data_hora(dt: datetime) -> str:
-    return dt.strftime("%d/%m/%Y às %H:%M")
-
-
-def _info(icon: str, titulo: str) -> ui.column:
+def _info(icone: str, titulo: str) -> ui.column:
     """Linha de informação com ícone; o conteúdo é adicionado pelo chamador."""
     with ui.row().classes("items-start no-wrap gap-3"):
-        _ = ui.icon(icon, size="24px").classes("text-primary")
+        _ = ui.icon(icone, size="24px").classes("text-primary")
         coluna = ui.column().classes("gap-0")
         with coluna:
             _ = ui.label(titulo).classes("text-caption text-grey-7")
     return coluna
 
 
-def _vagas(event: Event) -> None:
-    disponiveis = max(event.vagas - (event.inscritas or 0), 0)
+def _vagas(evento: Evento) -> None:
+    disponiveis = max(evento.vagas - (evento.inscritas or 0), 0)
     with _info("event_seat", "Vagas"):
         if disponiveis == 0:
-            _ = ui.label(f"Esgotado ({event.vagas} vagas)").classes("text-negative")
+            _ = ui.label(f"Esgotado ({evento.vagas} vagas)").classes("text-negative")
         else:
-            _ = ui.label(f"{disponiveis} de {event.vagas} disponíveis")
+            _ = ui.label(f"{disponiveis} de {evento.vagas} disponíveis")
 
 
-def _valor(event: Event) -> None:
+def _valor(evento: Evento) -> None:
     with _info("attach_money", "Valor"):
-        if event.valor > 0:
-            _ = ui.label(f"Cheio: {formatar_moeda(event.valor)}")
-            _ = ui.label(
-                f"Meia-entrada: {formatar_moeda(round(event.valor / 2, 2))}"
-            ).classes("text-grey-7")
+        if evento.valor > 0:
+            _ = ui.label(f"Cheio: {formatar_moeda(evento.valor)}")
+            _ = ui.label(f"Meia-entrada: {formatar_moeda(evento.valor_meia)}").classes(
+                "text-grey-7"
+            )
         else:
             _ = ui.label("Evento gratuito").classes("text-positive")
 
 
-def _localizacao(event: Event) -> None:
-    if event.latitude is None or event.longitude is None:
+def _localizacao(evento: Evento) -> None:
+    if evento.latitude is None or evento.longitude is None:
         _ = ui.label("Não informada").classes("text-grey-7")
         return
     # os tiles do mapa são carregados do OpenStreetMap pelo navegador
-    mapa = ui.leaflet(center=(event.latitude, event.longitude), zoom=15).classes(
+    mapa = ui.leaflet(center=(evento.latitude, evento.longitude), zoom=15).classes(
         "w-full h-64 rounded-borders"
     )
-    _ = mapa.marker(latlng=(event.latitude, event.longitude))
+    _ = mapa.marker(latlng=(evento.latitude, evento.longitude))
 
 
-def _horario_atividade(activity: Activity) -> str:
-    inicio, fim = activity.data_hora_inicio, activity.data_hora_fim
-    return f"{_data_hora(inicio)} – {_data_hora(fim)}"
-
-
-def _activity_card(activity: Activity) -> None:
+def _cartao_atividade(atividade: Atividade) -> None:
     with ui.card().classes("w-full"), ui.column().classes("w-full gap-2"):
         _ = ui.link(
-            activity.nome,
-            f"/event/{activity.id_evento}/activities/{activity.id}",
+            atividade.nome,
+            f"/event/{atividade.id_evento}/activities/{atividade.id}",
         ).classes("text-h6 text-weight-medium no-underline text-inherit")
-        with ui.row().classes("items-center gap-x-6 gap-y-1 text-grey-8"):
-            for icon, texto in (
-                ("schedule", _horario_atividade(activity)),
-                ("meeting_room", activity.sala),
-                ("event_seat", f"{activity.vagas} vagas"),
-            ):
-                with ui.row().classes("items-center gap-1"):
-                    _ = ui.icon(icon, size="18px")
-                    _ = ui.label(texto).classes("text-body2")
-        if activity.descricao:
-            _ = ui.label(activity.descricao).classes("text-body1")
+        linha_de_icones(
+            (
+                ("schedule", horario_atividade(atividade)),
+                ("meeting_room", atividade.sala),
+                ("event_seat", f"{atividade.vagas} vagas"),
+            )
+        )
+        if atividade.descricao:
+            _ = ui.label(atividade.descricao).classes("text-body1")
 
         # página pública: dos ministrantes só são exibidos dados de
         # apresentação, nunca CPF ou e-mail
         _ = ui.label("Ministrantes").classes("text-caption text-grey-7 q-mt-sm")
-        for lecturer in activity.lecturers:
+        for ministrante in atividade.ministrantes:
             with ui.row().classes("items-start no-wrap gap-2"):
                 _ = ui.icon("person", size="20px").classes("text-primary")
                 with ui.column().classes("gap-0"):
                     with ui.row().classes("items-center gap-2"):
-                        _ = ui.label(lecturer.user.nome).classes("text-weight-medium")
-                        _ = ui.label(lecturer.instituicao).classes("text-grey-7")
-                        if lecturer.link_lattes:
-                            _ = ui.link("Lattes", lecturer.link_lattes, new_tab=True)
-                    if lecturer.mini_bio:
-                        _ = ui.label(lecturer.mini_bio).classes(
+                        _ = ui.label(ministrante.usuario.nome).classes(
+                            "text-weight-medium"
+                        )
+                        _ = ui.label(ministrante.instituicao).classes("text-grey-7")
+                        if ministrante.link_lattes:
+                            _ = ui.link("Lattes", ministrante.link_lattes, new_tab=True)
+                    if ministrante.mini_bio:
+                        _ = ui.label(ministrante.mini_bio).classes(
                             "text-body2 text-grey-8"
                         )
 
 
-def _atividades(event_id: int) -> None:
-    activities = get_event_activities(event_id)
+def _atividades(evento_id: int) -> None:
+    atividades = listar_atividades_com_ministrantes(evento_id)
     with ui.row().classes("w-full items-center"):
         _ = ui.label("Atividades").classes("text-h5")
         _ = ui.space()
         _ = ui.link(
             "Ver todas as atividades",
-            f"/event/{event_id}/activities",
+            f"/event/{evento_id}/activities",
         ).props("flat dense no-caps color=primary")
-    if not activities:
+    if not atividades:
         _ = ui.label("Nenhuma atividade cadastrada.").classes("text-grey-7")
         return
-    for activity in activities:
-        _activity_card(activity)
+    for atividade in atividades:
+        _cartao_atividade(atividade)
 
 
-def _dialogo_inscricao(event: Event, user: User) -> None:
+def _dialogo_inscricao(evento: Evento, usuario: Usuario) -> None:
     """
     Dialog de inscrição: o usuário escolhe valor cheio ou meia-entrada e
     anexa o comprovante (que também justifica a meia-entrada). O valor é
@@ -152,17 +173,16 @@ def _dialogo_inscricao(event: Event, user: User) -> None:
 
     Evento gratuito não tem nem escolha de valor nem comprovante.
     """
-    gratuita = event.valor == 0
-    meia_preco = round(event.valor / 2, 2)
+    gratuita = evento.valor == 0
     arquivo: FileUpload | None = None
 
-    def file_change(e: events.UploadEventArguments):
+    def arquivo_selecionado(e: events.UploadEventArguments):
         nonlocal arquivo
         arquivo = e.file
         erro_comprovante.visible = False
 
     with ui.dialog() as dialogo, ui.card().classes("w-full").style("max-width: 500px"):
-        _ = ui.label(f"Inscrever-se em {event.nome}").classes("text-h6")
+        _ = ui.label(f"Inscrever-se em {evento.nome}").classes("text-h6")
 
         radios = None
         if gratuita:
@@ -172,8 +192,8 @@ def _dialogo_inscricao(event: Event, user: User) -> None:
         else:
             radios = ui.radio(
                 {
-                    "cheio": f"Valor cheio — {formatar_moeda(event.valor)}",
-                    "meia": f"Meia-entrada — {formatar_moeda(meia_preco)}",
+                    "cheio": f"Valor cheio — {formatar_moeda(evento.valor)}",
+                    "meia": f"Meia-entrada — {formatar_moeda(evento.valor_meia)}",
                 },
                 value="cheio",
             ).classes("w-full q-mb-md")
@@ -182,7 +202,7 @@ def _dialogo_inscricao(event: Event, user: User) -> None:
                 "Comprovante de pagamento em pdf, para a meia-entrada inclua um documento válido no mesmo arquivo"
             ).classes("text-caption text-grey-7")
 
-            _ = upload_comprovante(on_upload=file_change)
+            _ = upload_comprovante(on_upload=arquivo_selecionado)
             erro_comprovante = ui.label(
                 "Anexe o comprovante em PDF para confirmar a inscrição."
             ).classes("text-negative text-caption")
@@ -193,28 +213,28 @@ def _dialogo_inscricao(event: Event, user: User) -> None:
                 erro_comprovante.visible = True
                 return
             try:
-                _ = register_user_for_event(
-                    user_id=user.id,
-                    event_id=event.id,
+                _ = inscrever_usuario_evento(
+                    usuario_id=usuario.id,
+                    evento_id=evento.id,
                     meia=radios.value == "meia" if radios else False,
                     comprovante_usuario=await arquivo.read() if arquivo else None,
                 )
-            except DuplicateEventRegistration:
+            except EventoRepetido:
                 ui.notify("Você já possui uma inscrição neste evento.")
                 return
-            except AgeBelowClassification:
+            except IdadeAbaixoClassificacao:
                 ui.notify(f"""
                 Sua idade não permite a inscrição neste evento
-                (classificação {event.classificacao_indicativa}+)
+                (classificação {evento.classificacao_indicativa}+)
                 """)
                 return
-            except NoMoreVacancy:
+            except SemVagas:
                 ui.notify("As vagas deste evento acabaram.")
                 return
-            except InscriptionProofNotPdf:
+            except ComprovanteNaoEhPdf:
                 ui.notify("O comprovante precisa ser um arquivo PDF.")
                 return
-            ui.navigate.to(f"/user/registrations/{event.id}")
+            ui.navigate.to(f"/user/registrations/{evento.id}")
 
         with ui.row().classes("w-full"):
             _ = ui.space()
@@ -224,11 +244,11 @@ def _dialogo_inscricao(event: Event, user: User) -> None:
     dialogo.open()
 
 
-def _secao_inscricao(event: Event, user: User | None) -> None:
+def _secao_inscricao(evento: Evento, usuario: Usuario | None) -> None:
     """Botão de inscrição adaptado ao estado do usuário."""
     with ui.card().classes("w-full"), ui.row().classes("w-full items-center gap-3"):
         _ = ui.icon("how_to_reg", size="28px").classes("text-primary")
-        if user is None:
+        if usuario is None:
             _ = ui.label("Faça login para se inscrever neste evento.").classes(
                 "text-body1"
             )
@@ -236,7 +256,7 @@ def _secao_inscricao(event: Event, user: User | None) -> None:
             _ = ui.link("Entrar", "/login").props("flat dense no-caps color=primary")
             return
 
-        existente = get_inscription(user.id, event.id)
+        existente = obter_inscricao(usuario.id, evento.id)
         if existente is not None and existente.status != "cancelada":
             _ = ui.label(f"Sua inscrição está {existente.status.lower()}.").classes(
                 "text-body1"
@@ -244,7 +264,7 @@ def _secao_inscricao(event: Event, user: User | None) -> None:
             _ = ui.space()
             _ = ui.link(
                 "Ver minha inscrição",
-                f"/user/registrations/{event.id}",
+                f"/user/registrations/{evento.id}",
             ).props("flat dense no-caps color=primary")
             return
 
@@ -255,11 +275,11 @@ def _secao_inscricao(event: Event, user: User | None) -> None:
             _ = ui.space()
             _ = ui.link(
                 "Ver detalhes",
-                f"/user/registrations/{event.id}",
+                f"/user/registrations/{evento.id}",
             ).props("flat dense no-caps color=primary")
             return
 
-        if (event.inscritas or 0) >= event.vagas:
+        if (evento.inscritas or 0) >= evento.vagas:
             _ = ui.button("Evento lotado", icon="event_busy").props("outline").disable()
             return
 
@@ -268,68 +288,180 @@ def _secao_inscricao(event: Event, user: User | None) -> None:
         _ = ui.button(
             "Inscrever-se",
             icon="how_to_reg",
-            on_click=lambda: _dialogo_inscricao(event, user),
+            on_click=lambda: _dialogo_inscricao(evento, usuario),
         ).props("color=primary")
 
 
-def _dialogo_editar_evento(event: Event) -> None:
+def dialogo_criar_evento(ao_sucesso: Callable[[int], None]) -> None:
+    """
+    Dialog administrativo de criação de evento.
+
+    O evento precisa ter pelo menos uma atividade (regra de negócio), então
+    o dialog também lista as atividades a criar; cada uma precisa estar
+    contida no horário do evento e ter ao menos um ministrante. Ao concluir,
+    ``ao_sucesso`` recebe o id do evento criado.
+    """
+    linhas: list[tuple[ui.card, FormularioAtividade, SeletorMinistrantes]] = []
+    revalidadores: list[Callable[[], None]] = []
+    usuarios = listar_usuarios()
+
+    with ui.dialog() as dialogo, ui.card().classes("w-full").style("max-width: 900px"):
+        _ = ui.label("Criar evento").classes("text-h6")
+        with formulario_evento() as formulario:
+            # validações de múltiplos campos do evento (datas e lat/lng)
+            # exibidas inline, como as validações por campo
+            conectar_validacao_evento(formulario)
+
+        with ui.separator():
+            pass
+
+        _ = ui.label("Atividades (pelo menos uma)").classes("text-subtitle1")
+        with ui.column().classes("w-full gap-2") as container_atividades:
+            pass
+
+        def adicionar_linha() -> None:
+            with container_atividades:
+                cartao = ui.card().classes("w-full")
+                with cartao:
+                    with formulario_atividade() as formulario_ativ:
+                        pass
+                    _ = ui.label("Ministrantes (pelo menos um)").classes(
+                        "text-caption text-grey-7 q-mt-sm"
+                    )
+                    with seletor_ministrantes(usuarios) as seletor:
+                        pass
+            entrada = (cartao, formulario_ativ, seletor)
+
+            def remover() -> None:
+                linhas.remove(entrada)
+                cartao.delete()
+
+            with cartao:
+                with ui.row().classes("w-full"):
+                    _ = ui.space()
+                    _ = ui.button(
+                        "Remover atividade", icon="delete", on_click=remover
+                    ).props("flat dense no-caps color=negative")
+
+            linhas.append(entrada)
+            # validação inline "atividade contida no horário do evento"
+            revalidadores.append(
+                conectar_atividade(formulario_ativ, limites_do_formulario(formulario))
+            )
+
+        adicionar_linha()
+
+        # mudanças no horário do evento reavaliam a contenção de todas as linhas
+        for campo in (
+            formulario.data_inicio,
+            formulario.hora_inicio,
+            formulario.data_fim,
+            formulario.hora_fim,
+        ):
+            campo.on_value_change(
+                lambda _: [revalidar() for revalidar in revalidadores]
+            )
+
+        _ = ui.button(
+            "Adicionar atividade", icon="add", on_click=adicionar_linha
+        ).props("flat dense no-caps")
+
+        def criar() -> None:
+            # validações de servidor: erros aparecem nos próprios campos
+            valores = coletar_valores(formulario)
+            if valores is None:
+                return
+
+            if not linhas:
+                ui.notify("Adicione pelo menos uma atividade.")
+                return
+
+            atividades: list[EntradaAtividade] = []
+            for _, formulario_ativ, seletor in linhas:
+                entrada = coletar_atividade(
+                    formulario_ativ, limites_do_formulario(formulario)
+                )
+                if entrada is None:
+                    return  # erro exibido nos campos da linha
+                ministrantes = seletor.coletar()
+                if ministrantes is None:
+                    return  # erro exibido no seletor da linha
+                entrada.ministrantes = ministrantes
+                atividades.append(entrada)
+
+            try:
+                evento = criar_evento(**valores.parametros(), atividades=atividades)
+            except EventoRepetido:
+                ui.notify("Já existe um evento com esse nome.")
+                return
+            except HorarioAtividadeInvalido:
+                ui.notify(
+                    "O horário de cada atividade precisa estar contido no do evento."
+                )
+                return
+            except AtividadeSemMinistrante:
+                ui.notify("Cada atividade precisa de pelo menos um ministrante.")
+                return
+            except MinistranteRepetido:
+                ui.notify("Um usuário não pode ministrar a mesma atividade duas vezes.")
+                return
+            dialogo.close()
+            ao_sucesso(evento.id)
+
+        with ui.row().classes("w-full q-mt-md"):
+            _ = ui.space()
+            _ = ui.button("Cancelar", on_click=dialogo.close).props("flat")
+            _ = ui.button("Criar", on_click=criar).props("color=primary")
+
+    dialogo.open()
+
+
+def dialogo_editar_evento(evento: Evento) -> None:
     """
     Dialog administrativo de edição de evento, pré-preenchido.
 
-    O salvamento delega as regras de negócio ao ``Event.update``: vagas não
-    podem ficar abaixo das inscrições ativas e o novo horário precisa
+    O salvamento delega as regras de negócio ao ``Evento.atualizar``: vagas
+    não podem ficar abaixo das inscrições ativas e o novo horário precisa
     continuar contendo as atividades existentes.
     """
     with ui.dialog() as dialogo, ui.card().classes("w-full").style("max-width: 900px"):
-        _ = ui.label(f"Editar {event.nome}").classes("text-h6")
-        form = campos_evento(valores_evento(event))
-        # validações de múltiplos campos (datas e lat/lng) exibidas inline
-        conectar_validacao_evento(form)
-        if (event.inscritas or 0) > 0:
+        _ = ui.label(f"Editar {evento.nome}").classes("text-h6")
+        with formulario_evento(ValoresEvento.de_evento(evento)) as formulario:
+            # validações de múltiplos campos (datas e lat/lng) exibidas inline
+            conectar_validacao_evento(formulario)
+        if (evento.inscritas or 0) > 0:
             _ = ui.label(
-                f"Evento com {event.inscritas} inscrição(ões) ativa(s): "
+                f"Evento com {evento.inscritas} inscrição(ões) ativa(s): "
                 "as vagas não podem ficar abaixo desse número."
             ).classes("text-caption text-grey-7")
 
         def salvar() -> None:
             # validações de servidor: erros aparecem nos próprios campos
-            valores = coletar_valores(form)
+            valores = coletar_valores(formulario)
             if valores is None:
                 return
             try:
-                event.update(
-                    nome=valores.nome,
-                    descricao=valores.descricao,
-                    data_hora_inicio=valores.data_hora_inicio,
-                    data_hora_fim=valores.data_hora_fim,
-                    classificacao_indicativa=valores.classificacao_indicativa,
-                    vagas=valores.vagas,
-                    latitude=valores.latitude,
-                    longitude=valores.longitude,
-                    valor=valores.valor,
-                    banner=valores.banner,
-                    banner_thumbnail=valores.banner_thumbnail,
-                )
-            except VacancyBelowInscriptions:
+                evento.atualizar(**valores.parametros())
+            except VagasAbaixoInscricoes:
                 ui.notify(
                     "As vagas não podem ficar menores que o número de "
                     "inscrições ativas.",
                     type="negative",
                 )
                 return
-            except InvalidActivitySchedule:
+            except HorarioAtividadeInvalido:
                 ui.notify(
                     "O novo horário precisa continuar contendo as atividades "
                     "do evento.",
                     type="negative",
                 )
                 return
-            except DuplicateEventRegistration:
+            except EventoRepetido:
                 ui.notify("Já existe um evento com esse nome.", type="negative")
                 return
             dialogo.close()
             ui.notify("Evento atualizado.", type="positive")
-            ui.navigate.to(f"/event/{event.id}")
+            ui.navigate.to(f"/event/{evento.id}")
 
         with ui.row().classes("w-full q-mt-md"):
             _ = ui.space()
@@ -339,7 +471,7 @@ def _dialogo_editar_evento(event: Event) -> None:
     dialogo.open()
 
 
-def _confirmar_exclusao(event: Event) -> None:
+def _dialogo_excluir_evento(evento: Evento) -> None:
     """
     Dialog de confirmação da exclusão de um evento.
 
@@ -347,56 +479,51 @@ def _confirmar_exclusao(event: Event) -> None:
     (regra de negócio); sem inscrições, as atividades e os ministrantes são
     excluídos junto.
     """
-    with ui.dialog() as dialogo, ui.card().classes("w-full").style("max-width: 420px"):
-        _ = ui.label("Excluir este evento?").classes("text-h6")
-        _ = ui.label(
-            "As atividades e os ministrantes do evento também serão "
-            "excluídos. Esta ação não pode ser desfeita."
-        ).classes("text-body2 text-grey-7")
 
-        def confirmar() -> None:
-            try:
-                removido = event.delete()
-            except EventHasInscriptions:
-                ui.notify(
-                    "Este evento possui usuários inscritos e não pode ser excluído.",
-                    type="negative",
-                )
-                return
-            except EventHasDependencies:
-                ui.notify("Não foi possível excluir o evento.", type="negative")
-                return
-            if not removido:
-                ui.notify("Evento não encontrado.", type="warning")
-                return
-            dialogo.close()
-            ui.notify("Evento excluído.", type="positive")
-            ui.navigate.to("/")
+    def confirmar(fechar: Callable[[], None]) -> None:
+        try:
+            removido = evento.excluir()
+        except EventoComInscricoes:
+            ui.notify(
+                "Este evento possui usuários inscritos e não pode ser excluído.",
+                type="negative",
+            )
+            return
+        except EventoComDependencias:
+            ui.notify("Não foi possível excluir o evento.", type="negative")
+            return
+        if not removido:
+            ui.notify("Evento não encontrado.", type="warning")
+            return
+        fechar()
+        ui.notify("Evento excluído.", type="positive")
+        ui.navigate.to("/")
 
-        with ui.row().classes("w-full q-mt-md"):
-            _ = ui.space()
-            _ = ui.button("Voltar", on_click=dialogo.close).props("flat")
-            _ = ui.button("Excluir", on_click=confirmar).props("color=negative")
-
-    dialogo.open()
+    dialogo_confirmacao(
+        "Excluir este evento?",
+        "As atividades e os ministrantes do evento também serão "
+        "excluídos. Esta ação não pode ser desfeita.",
+        "Excluir",
+        "negative",
+        confirmar,
+    )
 
 
 # página pública: não exige login
-@page("/event/{event_id}")
-def event_page(
-    event_id: int,
-    user: Annotated[User | None, Depends(get_optional_current_user)],
+@pagina("/event/{evento_id}")
+def pagina_evento(
+    evento_id: int,
+    usuario: Annotated[Usuario | None, Depends(obter_usuario_opcional)],
 ):
     try:
-        event = get_event(event_id)
-    except EventNotFound:
-        with ui.column().classes("w-full items-center q-mt-xl"):
-            _ = ui.icon("event_busy", size="64px").classes("text-grey-6")
-            _ = ui.label("Evento não encontrado").classes("text-h6")
-            _ = ui.link("Voltar para a lista de eventos", "/")
+        evento = obter_evento(evento_id)
+    except EventoNaoEncontrado:
+        nao_encontrado(
+            "event_busy", "Evento não encontrado", "/", "Voltar para a lista de eventos"
+        )
         return
 
-    eh_admin = user is not None and user.papel == "administrador"
+    eh_admin = eh_administrador(usuario)
 
     with ui.column().classes("w-full gap-4").style("max-width: 1000px; margin: 0 auto"):
         with ui.row().classes("w-full items-center gap-1"):
@@ -405,46 +532,46 @@ def event_page(
                 _ = ui.space()
                 _ = ui.link(
                     "Inscrições",
-                    f"/event/{event.id}/registrations",
+                    f"/event/{evento.id}/registrations",
                 ).props("flat dense no-caps")
 
-        if event.banner:
+        if evento.banner:
             _ = (
-                ui.image(event.banner)
+                ui.image(evento.banner)
                 .classes("w-full rounded-borders")
                 .style("aspect-ratio: 3 / 1")
             )
         if eh_admin:
             with ui.row().classes("w-full items-center gap-1"):
-                _ = ui.label(event.nome).classes("text-h4")
+                _ = ui.label(evento.nome).classes("text-h4")
                 _ = ui.space()
                 _ = ui.button(
                     "Editar",
                     icon="edit",
-                    on_click=lambda: _dialogo_editar_evento(event),
+                    on_click=lambda: dialogo_editar_evento(evento),
                 ).props("flat dense no-caps")
 
-        _ = ui.label(event.descricao or "").classes("text-body1")
+        _ = ui.label(evento.descricao or "").classes("text-body1")
 
-        _secao_inscricao(event, user)
+        _secao_inscricao(evento, usuario)
 
-        _atividades(event.id)
+        _atividades(evento.id)
 
         with ui.card().classes("w-full"), ui.column().classes("w-full gap-4"):
             with _info("schedule", "Data"):
-                _ = ui.label(f"Início: {_data_hora(event.data_hora_inicio)}")
-                _ = ui.label(f"Fim: {_data_hora(event.data_hora_fim)}")
-            _vagas(event)
-            _valor(event)
-            _localizacao(event)
+                _ = ui.label(f"Início: {data_hora(evento.data_hora_inicio)}")
+                _ = ui.label(f"Fim: {data_hora(evento.data_hora_fim)}")
+            _vagas(evento)
+            _valor(evento)
+            _localizacao(evento)
         if eh_admin:
             with ui.row().classes("w-full items-center gap-1"):
                 _ = ui.space()
                 _ = ui.button(
                     "Excluir",
                     icon="delete",
-                    on_click=lambda: _confirmar_exclusao(event),
+                    on_click=lambda: _dialogo_excluir_evento(evento),
                 ).props("dense no-caps color=negative ")
                 _ = ui.space()
 
-    scroll_to_top()
+    voltar_ao_topo()

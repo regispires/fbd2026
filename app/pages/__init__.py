@@ -7,11 +7,12 @@ que descreve seus relacionamentos (e.g. detalhes de um usuário mostram atividad
 ministradas por ele).
 
 Importar os submódulos aqui é o que registra as rotas das páginas no app do
-NiceGUI (os decoradores ``@ui.page`` rodam no import de cada módulo).
+NiceGUI (os decoradores ``@pagina``/``@ui.page`` rodam no import de cada módulo).
 """
 
 from . import activity as activity
 from . import event as event
+from . import home as home
 from . import login as login
 from . import registration as registration
 from . import user as user
