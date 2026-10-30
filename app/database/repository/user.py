@@ -29,6 +29,10 @@ pwd_context = PasswordHash((Argon2Hasher(),))
 
 Papel = Literal["administrador", "associado"]
 
+# valores do enum ``sexo_usuario`` do banco
+Sexo = Literal["M", "F", "O"]
+SEXO_ROTULO: dict[Sexo, str] = {"M": "Masculino", "F": "Feminino", "O": "Outros"}
+
 
 @dataclass
 class Usuario:
@@ -42,6 +46,7 @@ class Usuario:
     email: str
     data_nascimento: date
     papel: Papel
+    sexo: Sexo
     idade: int
 
     @classmethod
@@ -49,7 +54,9 @@ class Usuario:
         """Constrói um ``Usuario`` de uma linha de ``usuario_com_idade``."""
         return cls(**dict(row))
 
-    def atualizar(self, nome: str, email: str, cpf: str, data_nascimento: date) -> None:
+    def atualizar(
+        self, nome: str, email: str, cpf: str, data_nascimento: date, sexo: Sexo
+    ) -> None:
         """
         Atualiza os dados do usuário. A unicidade de CPF e e-mail é garantida
         pelo banco; violação vira ``UsuarioRepetido``.
@@ -57,7 +64,8 @@ class Usuario:
         query = text(
             """
             UPDATE usuario
-            SET nome = :nome, email = :email, cpf = :cpf, data_nascimento = :data_nascimento
+            SET nome = :nome, email = :email, cpf = :cpf, data_nascimento = :data_nascimento,
+                sexo = :sexo
             WHERE id = :id
             """
         )
@@ -72,6 +80,7 @@ class Usuario:
                         "email": email,
                         "cpf": cpf,
                         "data_nascimento": data_nascimento,
+                        "sexo": sexo,
                     },
                 )
             except IntegrityError as e:
@@ -151,7 +160,7 @@ def listar_usuarios() -> list[Usuario]:
     query = text(
         """
         SELECT id, nome, cpf::text, email, data_nascimento,
-               papel, idade::int
+               papel, sexo::text, idade::int
         FROM usuario_com_idade
         ORDER BY nome
         """
@@ -165,7 +174,7 @@ def obter_usuario_por_id(usuario_id: int) -> Usuario:
     query = text(
         """
         SELECT id, nome, cpf::text, email, data_nascimento,
-               papel, idade::int
+               papel, sexo::text, idade::int
         FROM usuario_com_idade
         WHERE id = :usuario_id
         LIMIT 1
@@ -184,6 +193,7 @@ def criar_usuario(
     email: str,
     senha: str,
     data_nascimento: date,
+    sexo: Sexo,
     papel: Papel = "associado",
 ) -> Usuario:
     """
@@ -196,9 +206,9 @@ def criar_usuario(
 
     query = text(
         """
-        INSERT INTO usuario (nome, cpf, email, senha_hash, papel, data_nascimento)
-        VALUES (:nome, :cpf, :email, :senha_hash, :papel, :data_nascimento)
-        RETURNING id, nome, cpf::text AS cpf, email, data_nascimento, papel,
+        INSERT INTO usuario (nome, cpf, email, senha_hash, papel, sexo, data_nascimento)
+        VALUES (:nome, :cpf, :email, :senha_hash, :papel, :sexo, :data_nascimento)
+        RETURNING id, nome, cpf::text AS cpf, email, data_nascimento, papel, sexo::text,
                   EXTRACT(YEARS FROM AGE(data_nascimento))::int AS idade
         """
     )
@@ -214,6 +224,7 @@ def criar_usuario(
                     "email": email,
                     "senha_hash": pwd_context.hash(senha),
                     "papel": papel,
+                    "sexo": sexo,
                     "data_nascimento": data_nascimento,
                 },
             )
@@ -230,7 +241,7 @@ def autenticar_usuario(email: str, senha: str) -> Usuario | None:
     query = text(
         """
         SELECT u.id, u.nome, u.cpf::text, u.email, u.data_nascimento,
-               u.papel, EXTRACT(YEARS FROM AGE(u.data_nascimento)) AS idade, u.senha_hash
+               u.papel, u.sexo::text, EXTRACT(YEARS FROM AGE(u.data_nascimento)) AS idade, u.senha_hash
         FROM usuario u
         WHERE u.email = :email
         LIMIT 1

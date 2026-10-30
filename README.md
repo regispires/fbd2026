@@ -40,6 +40,7 @@ erDiagram
         string cpf
         string email
         string papel
+        string sexo
         string senha_hash
         date data_nascimento
     }

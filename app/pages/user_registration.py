@@ -15,7 +15,7 @@ from fastapi import Request
 from nicegui import ui
 
 from app.auth import NOME_COOKIE, gerenciador_sessao
-from app.database.repository.user import criar_usuario
+from app.database.repository.user import SEXO_ROTULO, criar_usuario
 from app.exceptions import UsuarioRepetido
 from app.forms.validacao import (
     campo_data,
@@ -103,6 +103,11 @@ def pagina_cadastro(request: Request):
         # o calendário abre na escolha do ano, mais prático para datas antigas
         _ = nascimento.picker.props('default-view="Years"')
         nascimento.on_value_change(lambda: _ler_nascimento(nascimento))
+        sexo = ui.select(
+            SEXO_ROTULO,
+            label="Sexo *",
+            validation={"Informe o sexo.": obrigatorio},
+        ).classes("w-full")
 
         senha = ui.input(
             "Senha *",
@@ -143,7 +148,7 @@ def pagina_cadastro(request: Request):
             # todos os campos são validados (sem curto-circuito) para que os
             # erros apareçam de uma vez
             validos = [
-                campo.validate() for campo in (nome, cpf, email, senha, confirmacao)
+                campo.validate() for campo in (nome, cpf, email, sexo, senha, confirmacao)
             ]
             data_nascimento = _ler_nascimento(nascimento)
             if not all(validos) or data_nascimento is None:
@@ -159,6 +164,7 @@ def pagina_cadastro(request: Request):
                         email=email_informado,
                         senha=senha.value,
                         data_nascimento=data_nascimento,
+                        sexo=sexo.value,
                     )
                 except UsuarioRepetido:
                     erro.text = "Já existe um usuário com esse CPF ou e-mail."
