@@ -41,6 +41,7 @@ erDiagram
         string email
         string papel
         string sexo
+        string estado_civil
         string senha_hash
         date data_nascimento
     }

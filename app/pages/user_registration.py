@@ -15,7 +15,11 @@ from fastapi import Request
 from nicegui import ui
 
 from app.auth import NOME_COOKIE, gerenciador_sessao
-from app.database.repository.user import SEXO_ROTULO, criar_usuario
+from app.database.repository.user import (
+    ESTADO_CIVIL_ROTULO,
+    SEXO_ROTULO,
+    criar_usuario,
+)
 from app.exceptions import UsuarioRepetido
 from app.forms.validacao import (
     campo_data,
@@ -108,6 +112,11 @@ def pagina_cadastro(request: Request):
             label="Sexo *",
             validation={"Informe o sexo.": obrigatorio},
         ).classes("w-full")
+        estado_civil = ui.select(
+            ESTADO_CIVIL_ROTULO,
+            label="Estado civil *",
+            validation={"Informe o estado civil.": obrigatorio},
+        ).classes("w-full")
 
         senha = ui.input(
             "Senha *",
@@ -148,7 +157,8 @@ def pagina_cadastro(request: Request):
             # todos os campos são validados (sem curto-circuito) para que os
             # erros apareçam de uma vez
             validos = [
-                campo.validate() for campo in (nome, cpf, email, sexo, senha, confirmacao)
+                campo.validate()
+                for campo in (nome, cpf, email, sexo, estado_civil, senha, confirmacao)
             ]
             data_nascimento = _ler_nascimento(nascimento)
             if not all(validos) or data_nascimento is None:
@@ -165,6 +175,7 @@ def pagina_cadastro(request: Request):
                         senha=senha.value,
                         data_nascimento=data_nascimento,
                         sexo=sexo.value,
+                        estado_civil=estado_civil.value,
                     )
                 except UsuarioRepetido:
                     erro.text = "Já existe um usuário com esse CPF ou e-mail."

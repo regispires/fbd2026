@@ -18,23 +18,23 @@ BEGIN;
 -- =====================================================================
 -- ids inseridos explicitamente para facilitar a referência nas demais tabelas e nos testes
 
-INSERT INTO usuario (id, nome, cpf, email, senha_hash, papel, sexo, data_nascimento) VALUES
-    ( 1, 'Ana Souza',        '10433218100', 'ana.souza@exemplo.com',        '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'administrador', 'F', '1985-03-12'),
-    ( 2, 'Bruno Lima',       '96001338914', 'bruno.lima@exemplo.com',       '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'administrador', 'M', '1990-07-25'),
-    ( 3, 'Carla Mendes',     '08386379499', 'carla.mendes@exemplo.com',     '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'F', '1998-01-30'),
-    ( 4, 'Diego Ferreira',   '02654235114', 'diego.ferreira@exemplo.com',   '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'M', '2001-11-05'),
-    ( 5, 'Eduarda Rocha',    '16155940789', 'eduarda.rocha@exemplo.com',    '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'F', '1995-06-18'),
-    ( 6, 'Felipe Araújo',    '81618495950', 'felipe.araujo@exemplo.com',    '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'M', '2003-09-09'),
-    ( 7, 'Gabriela Nunes',   '31034131656', 'gabriela.nunes@exemplo.com',   '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'F', '1999-12-01'),
-    ( 8, 'Henrique Castro',  '47525534144', 'henrique.castro@exemplo.com',  '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'M', '1978-04-22'),
-    ( 9, 'Isabela Martins',  '92832764851', 'isabela.martins@exemplo.com',  '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'F', '1982-08-14'),
+INSERT INTO usuario (id, nome, cpf, email, senha_hash, papel, sexo, estado_civil, data_nascimento) VALUES
+    ( 1, 'Ana Souza',        '10433218100', 'ana.souza@exemplo.com',        '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'administrador', 'F', 'C', '1985-03-12'),
+    ( 2, 'Bruno Lima',       '96001338914', 'bruno.lima@exemplo.com',       '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'administrador', 'M', 'C', '1990-07-25'),
+    ( 3, 'Carla Mendes',     '08386379499', 'carla.mendes@exemplo.com',     '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'F', 'S', '1998-01-30'),
+    ( 4, 'Diego Ferreira',   '02654235114', 'diego.ferreira@exemplo.com',   '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'M', 'S', '2001-11-05'),
+    ( 5, 'Eduarda Rocha',    '16155940789', 'eduarda.rocha@exemplo.com',    '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'F', 'C', '1995-06-18'),
+    ( 6, 'Felipe Araújo',    '81618495950', 'felipe.araujo@exemplo.com',    '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'M', 'S', '2003-09-09'),
+    ( 7, 'Gabriela Nunes',   '31034131656', 'gabriela.nunes@exemplo.com',   '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'F', 'S', '1999-12-01'),
+    ( 8, 'Henrique Castro',  '47525534144', 'henrique.castro@exemplo.com',  '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'M', 'D', '1978-04-22'),
+    ( 9, 'Isabela Martins',  '92832764851', 'isabela.martins@exemplo.com',  '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'F', 'C', '1982-08-14'),
     -- menores de idade, úteis para testar a classificação indicativa
-    (10, 'João Pedro Alves', '35030564160', 'joao.alves@exemplo.com',       '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'M', '2011-02-10'),
-    (11, 'Larissa Barbosa',  '39537672409', 'larissa.barbosa@exemplo.com',  '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'F', '2013-05-20'),
-    (12, 'Marcos Vieira',    '23884969692', 'marcos.vieira@exemplo.com',    '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'M', '1988-10-03'),
-    (13, 'Natália Gomes',    '53287101269', 'natalia.gomes@exemplo.com',    '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'O', '2000-02-29'),
-    (14, 'Otávio Ribeiro',   '26916697857', 'otavio.ribeiro@exemplo.com',   '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'M', '1993-03-15'),
-    (15, 'Paula Cardoso',    '48018451427', 'paula.cardoso@exemplo.com',    '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'F', '1997-07-07');
+    (10, 'João Pedro Alves', '35030564160', 'joao.alves@exemplo.com',       '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'M', 'S', '2011-02-10'),
+    (11, 'Larissa Barbosa',  '39537672409', 'larissa.barbosa@exemplo.com',  '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'F', 'S', '2013-05-20'),
+    (12, 'Marcos Vieira',    '23884969692', 'marcos.vieira@exemplo.com',    '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'M', 'D', '1988-10-03'),
+    (13, 'Natália Gomes',    '53287101269', 'natalia.gomes@exemplo.com',    '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'O', 'S', '2000-02-29'),
+    (14, 'Otávio Ribeiro',   '26916697857', 'otavio.ribeiro@exemplo.com',   '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'M', 'C', '1993-03-15'),
+    (15, 'Paula Cardoso',    '48018451427', 'paula.cardoso@exemplo.com',    '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'F', 'S', '1997-07-07');
 
 SELECT setval(pg_get_serial_sequence('usuario', 'id'), (SELECT MAX(id) FROM usuario));
 

@@ -84,6 +84,7 @@ class Ministrante:
                 data_nascimento=row["data_nascimento"],
                 papel=row["papel"],
                 sexo=row["sexo"],
+                estado_civil=row["estado_civil"],
                 idade=row["idade"],
             ),
         )
@@ -478,7 +479,7 @@ def listar_ministrantes(evento_id: int, atividade_id: int) -> list[Ministrante]:
         SELECT m.id_usuario, m.id_evento, m.id_atividade,
                m.mini_bio, m.instituicao, m.link_lattes,
                v.id, v.nome, v.cpf::text, v.email, v.data_nascimento,
-               v.papel, v.sexo::text, v.idade::int
+               v.papel, v.sexo::text, v.estado_civil::text, v.idade::int
         FROM ministra_atividade m
         JOIN usuario_com_idade v ON v.id = m.id_usuario
         WHERE m.id_evento = :id_evento AND m.id_atividade = :id_atividade
@@ -577,7 +578,7 @@ def listar_atividades_com_ministrantes(evento_id: int) -> list[Atividade]:
         SELECT m.id_usuario, m.id_evento, m.id_atividade,
                m.mini_bio, m.instituicao, m.link_lattes,
                v.id, v.nome, v.cpf::text, v.email, v.data_nascimento,
-               v.papel, v.sexo::text, v.idade::int
+               v.papel, v.sexo::text, v.estado_civil::text, v.idade::int
         FROM ministra_atividade m
         JOIN usuario_com_idade v ON v.id = m.id_usuario
         WHERE m.id_evento = :id_evento

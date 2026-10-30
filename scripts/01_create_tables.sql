@@ -12,6 +12,9 @@ CREATE TYPE status_inscricao AS ENUM ('confirmada', 'pendente', 'cancelada');
 -- M = masculino, F = feminino, O = outros
 CREATE TYPE sexo_usuario AS ENUM ('M', 'F', 'O');
 
+-- S = solteiro, C = casado, D = divorciado
+CREATE TYPE estado_civil_usuario AS ENUM ('S', 'C', 'D');
+
 
 
 CREATE TABLE IF NOT EXISTS usuario (
@@ -22,13 +25,14 @@ CREATE TABLE IF NOT EXISTS usuario (
     senha_hash TEXT NOT NULL,
     papel PAPEL_USUARIO NOT NULL DEFAULT 'associado',
     sexo SEXO_USUARIO NOT NULL,
+    estado_civil ESTADO_CIVIL_USUARIO NOT NULL,
     data_nascimento DATE NOT NULL
     -- idade não pode ser uma coluna virtual porque depende da data atual (função mutável)
     -- por isso ela é adicionada em uma view
 );
 
 CREATE OR REPLACE VIEW usuario_com_idade AS (
-    SELECT id, nome, cpf, email, papel, sexo, data_nascimento,
+    SELECT id, nome, cpf, email, papel, sexo, estado_civil, data_nascimento,
            EXTRACT(YEARS FROM AGE(data_nascimento)) as idade
     FROM usuario
 );

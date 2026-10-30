@@ -33,6 +33,14 @@ Papel = Literal["administrador", "associado"]
 Sexo = Literal["M", "F", "O"]
 SEXO_ROTULO: dict[Sexo, str] = {"M": "Masculino", "F": "Feminino", "O": "Outros"}
 
+# valores do enum ``estado_civil_usuario`` do banco
+EstadoCivil = Literal["S", "C", "D"]
+ESTADO_CIVIL_ROTULO: dict[EstadoCivil, str] = {
+    "S": "Solteiro(a)",
+    "C": "Casado(a)",
+    "D": "Divorciado(a)",
+}
+
 
 @dataclass
 class Usuario:
@@ -47,6 +55,7 @@ class Usuario:
     data_nascimento: date
     papel: Papel
     sexo: Sexo
+    estado_civil: EstadoCivil
     idade: int
 
     @classmethod
@@ -55,7 +64,13 @@ class Usuario:
         return cls(**dict(row))
 
     def atualizar(
-        self, nome: str, email: str, cpf: str, data_nascimento: date, sexo: Sexo
+        self,
+        nome: str,
+        email: str,
+        cpf: str,
+        data_nascimento: date,
+        sexo: Sexo,
+        estado_civil: EstadoCivil,
     ) -> None:
         """
         Atualiza os dados do usuário. A unicidade de CPF e e-mail é garantida
@@ -65,7 +80,7 @@ class Usuario:
             """
             UPDATE usuario
             SET nome = :nome, email = :email, cpf = :cpf, data_nascimento = :data_nascimento,
-                sexo = :sexo
+                sexo = :sexo, estado_civil = :estado_civil
             WHERE id = :id
             """
         )
@@ -81,6 +96,7 @@ class Usuario:
                         "cpf": cpf,
                         "data_nascimento": data_nascimento,
                         "sexo": sexo,
+                        "estado_civil": estado_civil,
                     },
                 )
             except IntegrityError as e:
@@ -160,7 +176,7 @@ def listar_usuarios() -> list[Usuario]:
     query = text(
         """
         SELECT id, nome, cpf::text, email, data_nascimento,
-               papel, sexo::text, idade::int
+               papel, sexo::text, estado_civil::text, idade::int
         FROM usuario_com_idade
         ORDER BY nome
         """
@@ -174,7 +190,7 @@ def obter_usuario_por_id(usuario_id: int) -> Usuario:
     query = text(
         """
         SELECT id, nome, cpf::text, email, data_nascimento,
-               papel, sexo::text, idade::int
+               papel, sexo::text, estado_civil::text, idade::int
         FROM usuario_com_idade
         WHERE id = :usuario_id
         LIMIT 1
@@ -194,6 +210,7 @@ def criar_usuario(
     senha: str,
     data_nascimento: date,
     sexo: Sexo,
+    estado_civil: EstadoCivil,
     papel: Papel = "associado",
 ) -> Usuario:
     """
@@ -206,9 +223,12 @@ def criar_usuario(
 
     query = text(
         """
-        INSERT INTO usuario (nome, cpf, email, senha_hash, papel, sexo, data_nascimento)
-        VALUES (:nome, :cpf, :email, :senha_hash, :papel, :sexo, :data_nascimento)
+        INSERT INTO usuario (nome, cpf, email, senha_hash, papel, sexo, estado_civil,
+                             data_nascimento)
+        VALUES (:nome, :cpf, :email, :senha_hash, :papel, :sexo, :estado_civil,
+                :data_nascimento)
         RETURNING id, nome, cpf::text AS cpf, email, data_nascimento, papel, sexo::text,
+                  estado_civil::text,
                   EXTRACT(YEARS FROM AGE(data_nascimento))::int AS idade
         """
     )
@@ -225,6 +245,7 @@ def criar_usuario(
                     "senha_hash": pwd_context.hash(senha),
                     "papel": papel,
                     "sexo": sexo,
+                    "estado_civil": estado_civil,
                     "data_nascimento": data_nascimento,
                 },
             )
@@ -241,7 +262,7 @@ def autenticar_usuario(email: str, senha: str) -> Usuario | None:
     query = text(
         """
         SELECT u.id, u.nome, u.cpf::text, u.email, u.data_nascimento,
-               u.papel, u.sexo::text, EXTRACT(YEARS FROM AGE(u.data_nascimento)) AS idade, u.senha_hash
+               u.papel, u.sexo::text, u.estado_civil::text, EXTRACT(YEARS FROM AGE(u.data_nascimento)) AS idade, u.senha_hash
         FROM usuario u
         WHERE u.email = :email
         LIMIT 1

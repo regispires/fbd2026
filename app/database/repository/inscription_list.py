@@ -253,7 +253,7 @@ def listar_participantes(evento_id: int) -> list[Usuario]:
     query = text(
         """
         SELECT v.id, v.nome, v.cpf::text, v.email, v.data_nascimento,
-               v.papel, v.sexo::text, v.idade::int
+               v.papel, v.sexo::text, v.estado_civil::text, v.idade::int
         FROM inscricao_evento i
         JOIN usuario_com_idade v ON v.id = i.id_usuario
         WHERE i.id_evento = :event_id AND i.status = 'confirmada'
@@ -275,7 +275,7 @@ def listar_presencas_atividade(evento_id: int, atividade_id: int) -> list[Usuari
     query = text(
         """
         SELECT v.id, v.nome, v.cpf::text, v.email, v.data_nascimento,
-               v.papel, v.sexo::text, v.idade::int
+               v.papel, v.sexo::text, v.estado_civil::text, v.idade::int
         FROM presenca_atividade p
         JOIN usuario_com_idade v ON v.id = p.id_usuario
         WHERE p.id_evento = :event_id AND p.id_atividade = :activity_id
