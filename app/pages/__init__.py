@@ -12,7 +12,7 @@ NiceGUI (os decoradores ``@pagina``/``@ui.page`` rodam no import de cada módulo
 
 from . import activity as activity
 from . import event as event
+from . import event_registration as event_registration
 from . import home as home
 from . import login as login
-from . import registration as registration
 from . import user as user
