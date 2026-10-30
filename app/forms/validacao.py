@@ -14,6 +14,7 @@ Padronização dos formulários:
   (controles com ``validation`` e os demais, via props).
 """
 
+import re
 from datetime import datetime, time
 from typing import Any
 
@@ -45,6 +46,32 @@ def campo_com_erro(campo: Any) -> bool:
     if isinstance(campo, ValidationElement):
         return campo.error is not None
     return bool(campo._props.get("error"))
+
+
+def somente_digitos(texto: str | None) -> str:
+    """Remove a máscara (pontos, traço, espaços) de documentos como o CPF."""
+    return "".join(c for c in (texto or "") if c.isdigit())
+
+
+def cpf_valido(cpf: str | None) -> bool:
+    """
+    CPF com 11 dígitos e dígitos verificadores corretos. Sequências de um
+    único dígito (``111.111.111-11``) passam no cálculo, mas são inválidas.
+    """
+    digitos = somente_digitos(cpf)
+    if len(digitos) != 11 or len(set(digitos)) == 1:
+        return False
+    for tamanho in (9, 10):
+        soma = sum(int(d) * peso for d, peso in zip(digitos, range(tamanho + 1, 1, -1)))
+        verificador = (soma * 10) % 11 % 10
+        if verificador != int(digitos[tamanho]):
+            return False
+    return True
+
+
+def email_valido(email: str | None) -> bool:
+    """Formato mínimo de e-mail: ``algo@dominio.tld``, sem espaços."""
+    return re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", (email or "").strip()) is not None
 
 
 def vazio_para_none(texto: str | None) -> str | None:

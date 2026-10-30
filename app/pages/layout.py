@@ -236,8 +236,8 @@ def pagina(
     no menu vem do parâmetro ``usuario`` declarado na função da página, com a
     dependência FastAPI que cada página já resolve (``obter_usuario``,
     ``obter_usuario_opcional``); páginas sem esse parâmetro ganham o
-    cabeçalho de visitante (menu "Entrar"). ``com_cabecalho=False`` exclui a
-    única página dedicada que não o usa (login, tela cheia). Os demais
+    cabeçalho de visitante (menu "Entrar"). ``com_cabecalho=False`` exclui as
+    páginas dedicadas que não o usam (login e cadastro, tela cheia). Os demais
     argumentos (``dependencies``, ``title``, ...) são repassados ao
     ``@ui.page``.
     """

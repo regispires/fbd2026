@@ -61,6 +61,9 @@ def pagina_login(request: Request):
         erro = ui.label("E-mail ou senha inválidos").classes("text-negative q-mb-md")
         erro.visible = False
         entrar = ui.button("Entrar").props("filled color=primary").classes("w-full")
+        with ui.row().classes("w-full justify-center items-center gap-1 q-mt-sm"):
+            _ = ui.label("Não tem uma conta?").classes("text-grey-7")
+            _ = ui.link("Cadastre-se", "/user/signup")
 
         async def enviar() -> None:
             email_valido = email.validate()
