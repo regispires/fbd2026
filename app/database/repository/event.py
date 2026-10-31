@@ -18,6 +18,11 @@ from app.database.repository import (
     garantir_timezone,
 )
 from app.database.repository.activity import EntradaAtividade
+from app.database.repository.paginacao import (
+    EVENTOS_POR_PAGINA,
+    Pagina,
+    limites,
+)
 from app.exceptions import (
     AtividadeSemMinistrante,
     EventoComDependencias,
@@ -248,12 +253,31 @@ def _exigir_horario_valido(data_hora_inicio: datetime, data_hora_fim: datetime) 
         raise HorarioEventoInvalido
 
 
-def listar_eventos() -> list[Evento]:
-    """Todos os eventos, ordenados pelo início (cartões da página inicial)."""
-    query = text(f"{_COLUNAS_EVENTO} ORDER BY data_hora_inicio")
+def listar_eventos(
+    num_pagina: int = 1, por_pagina: int = EVENTOS_POR_PAGINA
+) -> Pagina[Evento]:
+    """
+    Uma página dos eventos, ordenados pelo início (cartões da página
+    inicial); ``total`` conta todos os eventos cadastrados.
+    """
+    total = contar_linhas("SELECT COUNT(*) AS total FROM evento")
+    limite, deslocamento = limites(num_pagina, por_pagina)
+    query = text(
+        f"""
+        {_COLUNAS_EVENTO}
+        ORDER BY data_hora_inicio, id
+        LIMIT :limite OFFSET :deslocamento
+        """
+    )
+    params = {"limite": limite, "deslocamento": deslocamento}
     with session_maker() as session:
-        rows = session.execute(query).mappings()
-    return [Evento.de_linha(row) for row in rows]
+        rows = session.execute(query, params).mappings()
+    return Pagina(
+        itens=[Evento.de_linha(row) for row in rows],
+        total=total,
+        num_pagina=num_pagina,
+        por_pagina=por_pagina,
+    )
 
 
 def obter_evento(evento_id: int) -> Evento:

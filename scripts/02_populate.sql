@@ -223,4 +223,123 @@ INSERT INTO presenca_atividade (id_usuario, id_evento, id_atividade) VALUES
     (13, 2, 5),
     (13, 2, 6);
 
+-- =====================================================================
+-- Dados extras para exercitar a paginação
+-- =====================================================================
+-- A escala acima deixa cada listagem em uma única página. As entradas abaixo
+-- acrescentam eventos, atividades e inscrições suficientes para que os
+-- paginadores apareçam (artificial em parte, mas respeitando as regras de
+-- negócio documentadas). Válido apenas para um volume novo do banco.
+
+-- Eventos 9..13 (todos futuros, sem presenças)
+INSERT INTO evento (id, nome, descricao, data_hora_inicio, data_hora_fim, classificacao_indicativa, vagas, localizacao, banner, banner_thumbnail, valor) VALUES
+    ( 9, 'Curso de Introdução ao Linux',
+        'Um dia de instalação, linha de comando e primeiros scripts.',
+        '2027-04-05 08:00:00-04', '2027-04-05 18:00:00-04', NULL, 40, POINT(-38.5743, -3.7461),
+        'https://picsum.photos/seed/evento-9/1200/400', 'https://picsum.photos/seed/evento-9/400/225', 25.0),
+    (10, 'Treino para Maratona de Programação',
+        'Um dia de listas, grafos e programação dinâmica para o competitivo.',
+        '2027-04-24 09:00:00-04', '2027-04-24 17:00:00-04', 14, 60, POINT(-38.5267, -3.7319),
+        'https://picsum.photos/seed/evento-10/1200/400', 'https://picsum.photos/seed/evento-10/400/225', 10.0),
+    (11, 'Fórum de Empreendedorismo Digital',
+        'Conversas sobre produtos digitais e startups acadêmicas.',
+        '2027-05-06 13:00:00-04', '2027-05-06 20:00:00-04', NULL, 80, POINT(-38.5431, -3.7172),
+        'https://picsum.photos/seed/evento-11/1200/400', 'https://picsum.photos/seed/evento-11/400/225', 0.0),
+    (12, 'Oficina de UX/UI Design',
+        'Dois dias de pesquisa com usuários, wireframes e protótipos.',
+        '2027-05-21 09:00:00-04', '2027-05-22 17:00:00-04', NULL, 25, NULL,
+        'https://picsum.photos/seed/evento-12/1200/400', 'https://picsum.photos/seed/evento-12/400/225', 35.0),
+    (13, 'Conferência de Software Livre',
+        'Trilhas sobre comunidades, contribuição e empacotamento.',
+        '2027-06-10 08:00:00-04', '2027-06-11 18:00:00-04', NULL, 150, POINT(-38.5743, -3.7461),
+        'https://picsum.photos/seed/evento-13/1200/400', 'https://picsum.photos/seed/evento-13/400/225', 45.0);
+
+SELECT setval(pg_get_serial_sequence('evento', 'id'), (SELECT MAX(id) FROM evento));
+
+-- Atividades extras: 17..26 nos eventos novos e 27..33 na Semana Acadêmica
+-- (evento 1, já realizado: as presenças abaixo dependem de atividades passadas)
+INSERT INTO atividade (id, id_evento, nome, descricao, sala, vagas, data_hora_inicio, data_hora_fim) VALUES
+    -- Evento 9
+    (17,  9, 'Instalação e primeiro contato', 'Partições, usuários e primeiros comandos.', 'Sala 101', 40, '2027-04-05 08:00:00-04', '2027-04-05 12:00:00-04'),
+    (18,  9, 'Linha de comando na prática', 'Compactação, permissões, pipes e scripts simples.', 'Sala 101', 40, '2027-04-05 13:00:00-04', '2027-04-05 18:00:00-04'),
+    -- Evento 10
+    (19, 10, 'Treino: listas e grafos', 'Problemas clássicos e dobramentos de técnicas.', 'Laboratório 3', 60, '2027-04-24 09:00:00-04', '2027-04-24 12:00:00-04'),
+    (20, 10, 'Treino: programação dinâmica', 'Recorrências e otimizações para o competitivo.', 'Laboratório 3', 60, '2027-04-24 13:00:00-04', '2027-04-24 17:00:00-04'),
+    -- Evento 11
+    (21, 11, 'Painel: startups de tecnologia', 'Fundadores contam trajetórias e aprendizados.', 'Auditório', 80, '2027-05-06 14:00:00-04', '2027-05-06 16:00:00-04'),
+    -- Evento 12
+    (22, 12, 'Princípios de UX', 'Pesquisa com usuários e arquitetura de informação.', 'Sala 202', 25, '2027-05-21 09:00:00-04', '2027-05-21 12:00:00-04'),
+    (23, 12, 'Prototipação no Figma', 'Do wireframe ao protótipo navegável.', 'Sala 202', 25, '2027-05-21 13:00:00-04', '2027-05-21 17:00:00-04'),
+    -- Evento 13
+    (24, 13, 'Abertura: software livre e comunidade', NULL, 'Auditório', 150, '2027-06-10 08:00:00-04', '2027-06-10 10:00:00-04'),
+    (25, 13, 'Workshop: contribuindo para projetos open source', 'Pull requests reais em projetos da comunidade.', 'Laboratório 2', 40, '2027-06-10 10:30:00-04', '2027-06-10 12:30:00-04'),
+    (26, 13, 'Workshop: empacotamento de software', 'Pacotes, dependências e repositórios.', 'Laboratório 2', 40, '2027-06-10 14:00:00-04', '2027-06-10 18:00:00-04'),
+    -- Evento 1: mais atividades da semana (a listagem de atividades fica com 2 páginas)
+    (27,  1, 'Palestra: computação quântica para curiosos', NULL, 'Auditório', 100, '2026-05-11 14:00:00-03', '2026-05-11 16:00:00-03'),
+    (28,  1, 'Minicurso: introdução ao Rust', 'Tipos, ownership e segurança de memória.', 'Laboratório 2', 30, '2026-05-12 08:00:00-03', '2026-05-12 12:00:00-03'),
+    (29,  1, 'Roda de conversa: mulheres na computação', NULL, 'Auditório', 100, '2026-05-12 16:00:00-03', '2026-05-12 18:00:00-03'),
+    (30,  1, 'Oficina: automação com Python', 'Scripts que economizam horas de trabalho.', 'Laboratório 1', 30, '2026-05-13 08:00:00-03', '2026-05-13 12:00:00-03'),
+    (31,  1, 'Palestra: cloud e SRE', 'Confiabilidade e operação em escala.', 'Auditório', 100, '2026-05-13 19:00:00-03', '2026-05-13 21:00:00-03'),
+    (32,  1, 'Minicurso: Linux básico', 'Terminal e pacotes para iniciantes.', 'Laboratório 2', 30, '2026-05-14 08:00:00-03', '2026-05-14 12:00:00-03'),
+    (33,  1, 'Competição de programação interna', 'Maratona curta entre equipes do campus.', 'Laboratório 3', 50, '2026-05-14 14:00:00-03', '2026-05-14 18:00:00-03');
+
+SELECT setval(pg_get_serial_sequence('atividade', 'id'), (SELECT MAX(id) FROM atividade));
+
+INSERT INTO ministra_atividade (id_usuario, id_evento, id_atividade, mini_bio, instituicao, link_lattes) VALUES
+    -- Eventos 9..13
+    (14,  9, 17, 'Administra sistemas Linux há doze anos.', 'Empresa Segura S.A.', NULL),
+    ( 9,  9, 18, 'Professora de Sistemas Operacionais.', 'Universidade Federal do Ceará', NULL),
+    ( 2, 10, 19, 'Treinador da equipe de maratona.', 'Universidade Federal do Ceará', NULL),
+    ( 9, 10, 20, 'Professora de algoritmos.', 'Universidade Federal do Ceará', NULL),
+    ( 8, 11, 21, 'Consultor de carreira em TI.', 'Instituto Federal do Ceará', 'http://lattes.cnpq.br/0000000000000008'),
+    ( 5, 12, 22, 'Pesquisadora de interação humano-computador.', 'Universidade Federal do Ceará', 'http://lattes.cnpq.br/0000000000000005'),
+    (12, 12, 23, 'Designer de produto há 10 anos.', 'Empresa Exemplo LTDA', NULL),
+    ( 9, 13, 24, 'Mantenedora de projetos educacionais livres.', 'Universidade Federal do Ceará', 'http://lattes.cnpq.br/0000000000000009'),
+    (12, 13, 25, 'Contribuidor de projetos open source.', 'Empresa Exemplo LTDA', NULL),
+    (14, 13, 26, 'Empacotador de distribuição Linux.', 'Empresa Segura S.A.', NULL),
+    -- Evento 1: ministrantes das atividades extras (27..33)
+    ( 9, 1, 27, 'Professora de Ciência da Computação.', 'Universidade Federal do Ceará', 'http://lattes.cnpq.br/0000000000000009'),
+    (12, 1, 28, 'Desenvolvedor backend há 10 anos.', 'Empresa Exemplo LTDA', NULL),
+    ( 1, 1, 29, 'Administradora do sistema de eventos.', 'Universidade Federal do Ceará', NULL),
+    ( 5, 1, 30, 'Mestranda em Engenharia de Software.', 'Universidade Federal do Ceará', 'http://lattes.cnpq.br/0000000000000005'),
+    ( 8, 1, 31, 'Professor e consultor de carreira em TI.', 'Instituto Federal do Ceará', 'http://lattes.cnpq.br/0000000000000008'),
+    (14, 1, 32, 'Analista de infraestrutura.', 'Empresa Segura S.A.', NULL),
+    ( 2, 1, 33, 'Treinador da equipe de maratona.', 'Universidade Federal do Ceará', NULL);
+
+-- Mais inscrições: o evento 1 fica com 15 (página dupla no painel) e a
+-- Carla Mendes (usuário 3) fica com 11 inscrições (página dupla em "Minhas
+-- inscrições"). Valores derivados do preço do evento (cheio ou meia).
+INSERT INTO inscricao_evento (id_usuario, id_evento, data_inscricao, status, comentario_administrador, comprovante_usuario, valor, meia) VALUES
+    -- Evento 1: de 9 para 15 inscrições
+    ( 1, 1, '2026-04-12 09:00:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0001-1', 'UTF8'), 50.0, FALSE),
+    ( 2, 1, '2026-04-14 10:30:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0002-1', 'UTF8'), 25.0, TRUE),
+    ( 8, 1, '2026-04-16 15:45:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0008-1', 'UTF8'), 50.0, FALSE),
+    ( 9, 1, '2026-04-18 11:20:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0009-1', 'UTF8'), 50.0, FALSE),
+    (11, 1, '2026-04-22 09:10:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0011-1', 'UTF8'), 25.0, TRUE),
+    (12, 1, '2026-04-26 14:00:00-03', 'cancelada',  'Comprovante ilegível.', convert_to('%PDF-1.4 comprovante-pix-0012-1', 'UTF8'), 50.0, FALSE),
+
+    -- Carla Mendes (3) em eventos 7..13 (já tem 1, 2, 3 e 4)
+    ( 3, 7, '2026-10-15 10:00:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0003-7', 'UTF8'), 60.0, FALSE),
+    ( 3, 8, '2026-10-16 10:00:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0003-8', 'UTF8'), 40.0, FALSE),
+    ( 3, 9, '2026-10-18 10:00:00-03', 'pendente',   NULL, convert_to('%PDF-1.4 comprovante-pix-0003-9', 'UTF8'), 25.0, FALSE),
+    ( 3,10, '2026-10-19 10:00:00-03', 'pendente',   NULL, convert_to('%PDF-1.4 comprovante-pix-0003-10', 'UTF8'), 10.0, FALSE),
+    ( 3,11, '2026-10-20 10:00:00-03', 'confirmada', NULL, NULL, 0.0, FALSE),
+    ( 3,12, '2026-10-22 10:00:00-03', 'pendente',   NULL, convert_to('%PDF-1.4 comprovante-pix-0003-12', 'UTF8'), 35.0, FALSE),
+    ( 3,13, '2026-10-25 10:00:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0003-13', 'UTF8'), 45.0, FALSE),
+    ( 4, 9, '2026-10-20 08:30:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0004-9', 'UTF8'), 25.0, FALSE),
+    ( 6,10, '2026-10-21 12:00:00-03', 'confirmada', NULL, convert_to('%PDF-1.4 comprovante-pix-0006-10', 'UTF8'), 10.0, FALSE),
+    ( 7,13, '2026-10-24 16:40:00-03', 'pendente',   NULL, convert_to('%PDF-1.4 comprovante-pix-0007-13', 'UTF8'), 45.0, FALSE);
+
+-- Presenças extra: Diego Ferreira (4) em praticamente toda a Semana
+-- Acadêmica — 11 presenças no evento 1 (a página de presenças dele fica
+-- com 2 páginas). Atividades já passadas.
+INSERT INTO presenca_atividade (id_usuario, id_evento, id_atividade) VALUES
+    ( 4, 1, 27),
+    ( 4, 1, 28),
+    ( 4, 1, 29),
+    ( 4, 1, 30),
+    ( 4, 1, 31),
+    ( 4, 1, 32),
+    ( 4, 1, 33);
+
 COMMIT;

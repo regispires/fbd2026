@@ -13,6 +13,11 @@ from app.database import session_maker
 from app.database.repository import contar_linhas, eh_pdf
 from app.database.repository.activity import obter_atividade
 from app.database.repository.event import obter_evento
+from app.database.repository.paginacao import (
+    LISTAS_POR_PAGINA,
+    Pagina,
+    limites,
+)
 from app.database.repository.inscription import (
     InscricaoEvento,
     PresencaAtividade,
@@ -224,8 +229,25 @@ def obter_inscricao(usuario_id: int, evento_id: int) -> InscricaoEvento | None:
     return InscricaoEvento.de_linha(row)
 
 
-def listar_inscricoes_do_evento(evento_id: int) -> list[InscricaoEvento]:
-    """Inscrições de um evento, com nomes e datas para o painel administrativo."""
+def listar_inscricoes_do_evento(
+    evento_id: int,
+    num_pagina: int = 1,
+    por_pagina: int = LISTAS_POR_PAGINA,
+) -> Pagina[InscricaoEvento]:
+    """
+    Uma página das inscrições de um evento, com nomes e datas para o painel
+    administrativo; ``total`` conta todas as inscrições do evento.
+    """
+    params = {"event_id": evento_id}
+    total = contar_linhas(
+        """
+        SELECT COUNT(*) AS total
+        FROM inscricao_evento
+        WHERE id_evento = :event_id
+        """,
+        {"event_id": evento_id},
+    )
+    limite, deslocamento = limites(num_pagina, por_pagina)
     query = text(
         """
         SELECT i.id_usuario, i.id_evento, i.data_inscricao, i.status,
@@ -236,12 +258,36 @@ def listar_inscricoes_do_evento(evento_id: int) -> list[InscricaoEvento]:
         JOIN usuario u ON u.id = i.id_usuario
         JOIN evento e ON e.id = i.id_evento
         WHERE i.id_evento = :event_id
-        ORDER BY i.data_inscricao
+        ORDER BY i.data_inscricao, i.id_usuario
+        LIMIT :limite OFFSET :deslocamento
         """
     )
     with session_maker() as session:
-        rows = session.execute(query, {"event_id": evento_id}).mappings()
-        return [InscricaoEvento.de_linha(r) for r in rows]
+        rows = session.execute(
+            query, {**params, "limite": limite, "deslocamento": deslocamento}
+        ).mappings()
+        pagina = [InscricaoEvento.de_linha(r) for r in rows]
+    return Pagina(
+        itens=pagina,
+        total=total,
+        num_pagina=num_pagina,
+        por_pagina=por_pagina,
+    )
+
+
+def contar_inscricoes_pendentes(evento_id: int) -> int:
+    """
+    Total de inscrições **pendentes** do evento (todas as páginas), para o
+    aviso global do painel administrativo.
+    """
+    return contar_linhas(
+        """
+        SELECT COUNT(*) AS total
+        FROM inscricao_evento
+        WHERE id_evento = :event_id AND status = 'pendente'
+        """,
+        {"event_id": evento_id},
+    )
 
 
 def listar_participantes(evento_id: int) -> list[Usuario]:

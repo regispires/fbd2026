@@ -45,6 +45,7 @@ from app.exceptions import (
     SemVagas,
     VagasAbaixoInscricoes,
 )
+from app.database.repository.paginacao import LISTAS_POR_PAGINA, Pagina
 from app.forms.atividade import (
     FormularioAtividade,
     coletar_atividade,
@@ -67,6 +68,7 @@ from app.pages.layout import (
     linha_de_icones,
     nao_encontrado,
     pagina,
+    paginacao,
     upload_comprovante,
     voltar_ao_topo,
 )
@@ -149,20 +151,30 @@ def _cartao_atividade(atividade: Atividade) -> None:
                         )
 
 
-def _atividades(evento_id: int) -> None:
-    atividades = listar_atividades_com_ministrantes(evento_id)
+def _atividades(evento: Evento, resultado: Pagina) -> None:
+    """
+    Seção de atividades da página do evento; ``resultado`` (já consultado
+    pelo chamador para validar a página solicitada via ``?page=``) traz a
+    página de atividades com os ministrantes já carregados.
+    """
     with ui.row().classes("w-full items-center"):
         _ = ui.label("Atividades").classes("text-h5")
         _ = ui.space()
         _ = ui.link(
             "Ver todas as atividades",
-            f"/event/{evento_id}/activities",
+            f"/event/{evento.id}/activities",
         ).props("flat dense no-caps color=primary")
-    if not atividades:
+    if resultado.total == 0:
         _ = ui.label("Nenhuma atividade cadastrada.").classes("text-grey-7")
         return
-    for atividade in atividades:
+    for atividade in resultado.itens:
         _cartao_atividade(atividade)
+    paginacao(
+        total=resultado.total,
+        num_pagina=resultado.pagina_valida,
+        por_pagina=LISTAS_POR_PAGINA,
+        caminho=f"/event/{evento.id}",
+    )
 
 
 def _dialogo_inscricao(evento: Evento, usuario: Usuario) -> None:
@@ -514,6 +526,7 @@ def _dialogo_excluir_evento(evento: Evento) -> None:
 def pagina_evento(
     evento_id: int,
     usuario: Annotated[Usuario | None, Depends(obter_usuario_opcional)],
+    page: int = 1,
 ):
     try:
         evento = obter_evento(evento_id)
@@ -524,6 +537,11 @@ def pagina_evento(
         return
 
     eh_admin = eh_administrador(usuario)
+
+    resultado = listar_atividades_com_ministrantes(evento.id, num_pagina=page)
+    if page != resultado.pagina_valida:
+        ui.navigate.to(f"/event/{evento.id}?page={resultado.pagina_valida}")
+        return
 
     with ui.column().classes("w-full gap-4").style("max-width: 1000px; margin: 0 auto"):
         with ui.row().classes("w-full items-center gap-1"):
@@ -555,7 +573,7 @@ def pagina_evento(
 
         _secao_inscricao(evento, usuario)
 
-        _atividades(evento.id)
+        _atividades(evento, resultado)
 
         with ui.card().classes("w-full"), ui.column().classes("w-full gap-4"):
             with _info("schedule", "Data"):

@@ -20,6 +20,7 @@ from app.auth import obter_usuario
 from app.database.repository.event import Evento, EventoNaoEncontrado, obter_evento
 from app.database.repository.inscription import InscricaoEvento
 from app.database.repository.inscription_list import obter_inscricao
+from app.database.repository.paginacao import LISTAS_POR_PAGINA
 from app.database.repository.user import Usuario
 from app.exceptions import (
     ComprovanteNaoEhPdf,
@@ -32,6 +33,7 @@ from app.pages.layout import (
     meia_badge,
     nao_encontrado,
     pagina,
+    paginacao,
     status_badge,
     upload_comprovante,
     voltar_ao_topo,
@@ -140,25 +142,35 @@ def _confirmar_cancelamento(evento_id: int, ao_cancelar: Callable[[], None]) -> 
 
 # página privada: exige sessão válida
 @pagina("/user/events")
-def pagina_minhas_inscricoes(usuario: Annotated[Usuario, Depends(obter_usuario)]):
+def pagina_minhas_inscricoes(
+    usuario: Annotated[Usuario, Depends(obter_usuario)],
+    page: int = 1,
+):
+    resultado = usuario.listar_inscricoes(num_pagina=page)
+
+    if page != resultado.pagina_valida:
+        ui.navigate.to(f"/user/events?page={resultado.pagina_valida}")
+        return
+
     with ui.column().classes("w-full gap-4").style("max-width: 1000px; margin: 0 auto"):
         _ = ui.label("Minhas inscrições").classes("text-h5 q-mt-md")
 
-        inscricoes = usuario.listar_inscricoes()
-        if not inscricoes:
-            with (
-                ui.card().classes("w-full"),
-                ui.column().classes("w-full gap-2 items-center"),
-            ):
-                _ = ui.icon("assignment_late", size="48px").classes("text-grey-5")
-                _ = ui.label("Você ainda não se inscreveu em nenhum evento.").classes(
-                    "text-grey-7"
-                )
-                _ = ui.link("Ver eventos", "/").props(
-                    "flat dense no-caps color=primary"
-                )
-        else:
-            for inscricao in inscricoes:
+        @ui.refreshable
+        def lista() -> None:
+            if resultado.total == 0:
+                with (
+                    ui.card().classes("w-full"),
+                    ui.column().classes("w-full gap-2 items-center"),
+                ):
+                    _ = ui.icon("assignment_late", size="48px").classes("text-grey-5")
+                    _ = ui.label(
+                        "Você ainda não se inscreveu em nenhum evento."
+                    ).classes("text-grey-7")
+                    _ = ui.link("Ver eventos", "/").props(
+                        "flat dense no-caps color=primary"
+                    )
+                return
+            for inscricao in resultado.itens:
                 with (
                     ui.card().classes("w-full"),
                     ui.row().classes("w-full items-center gap-3"),
@@ -186,6 +198,15 @@ def pagina_minhas_inscricoes(usuario: Annotated[Usuario, Depends(obter_usuario)]
                         "Presenças",
                         f"/user/events/{inscricao.evento_id}/attendances",
                     ).props("flat dense no-caps color=primary")
+
+        lista()
+
+    paginacao(
+        total=resultado.total,
+        num_pagina=page,
+        por_pagina=LISTAS_POR_PAGINA,
+        caminho="/user/events",
+    )
 
     voltar_ao_topo()
 
@@ -307,6 +328,7 @@ def pagina_inscricao(
 def pagina_presencas(
     evento_id: int,
     usuario: Annotated[Usuario, Depends(obter_usuario)],
+    page: int = 1,
 ):
     """
     Presenças do usuário em um evento (regra de negócio): lista as
@@ -323,7 +345,13 @@ def pagina_presencas(
         )
         return
 
-    presencas = usuario.listar_presencas(evento_id)
+    resultado = usuario.listar_presencas(evento_id, num_pagina=page)
+
+    if page != resultado.pagina_valida:
+        ui.navigate.to(
+            f"/user/events/{evento_id}/attendances?page={resultado.pagina_valida}"
+        )
+        return
 
     with ui.column().classes("w-full gap-4").style("max-width: 1000px; margin: 0 auto"):
         _ = ui.link(f"← {evento.nome}", f"/user/registrations/{evento_id}").classes(
@@ -332,20 +360,22 @@ def pagina_presencas(
 
         _ = ui.label("Minhas presenças").classes("text-h5 q-mt-md")
 
-        if not presencas:
-            with (
-                ui.card().classes("w-full"),
-                ui.column().classes("w-full gap-2 items-center"),
-            ):
-                _ = ui.icon("event_note", size="48px").classes("text-grey-5")
-                _ = ui.label(
-                    "Você não tem presenças registradas neste evento."
-                ).classes("text-grey-7")
-                _ = ui.link("Ver evento", f"/event/{evento.id}").props(
-                    "flat dense no-caps color=primary"
-                )
-        else:
-            for presenca in presencas:
+        @ui.refreshable
+        def lista() -> None:
+            if resultado.total == 0:
+                with (
+                    ui.card().classes("w-full"),
+                    ui.column().classes("w-full gap-2 items-center"),
+                ):
+                    _ = ui.icon("event_note", size="48px").classes("text-grey-5")
+                    _ = ui.label(
+                        "Você não tem presenças registradas neste evento."
+                    ).classes("text-grey-7")
+                    _ = ui.link("Ver evento", f"/event/{evento.id}").props(
+                        "flat dense no-caps color=primary"
+                    )
+                return
+            for presenca in resultado.itens:
                 with (
                     ui.card().classes("w-full"),
                     ui.row().classes("w-full items-center gap-3"),
@@ -360,5 +390,14 @@ def pagina_presencas(
                         "Ver atividade",
                         f"/event/{presenca.evento_id}/activities/{presenca.id_atividade}",
                     ).props("flat dense no-caps color=primary")
+
+        lista()
+
+    paginacao(
+        total=resultado.total,
+        num_pagina=page,
+        por_pagina=LISTAS_POR_PAGINA,
+        caminho=f"/user/events/{evento_id}/attendances",
+    )
 
     voltar_ao_topo()

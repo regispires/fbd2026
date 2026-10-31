@@ -13,6 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.database import session_maker
 from app.database.repository import contar_linhas, contido_em, garantir_timezone
+from app.database.repository.paginacao import (
+    LISTAS_POR_PAGINA,
+    Pagina,
+    limites,
+)
 from app.database.repository.user import Usuario
 from app.exceptions import (
     AtividadeComDependencias,
@@ -410,8 +415,24 @@ class Atividade(PreviaAtividade):
             return result.rowcount == 1
 
 
-def listar_atividades(evento_id: int) -> list[PreviaAtividade]:
-    """Prévias das atividades de um evento (listagem), ordenadas pelo id."""
+def listar_atividades(
+    evento_id: int,
+    num_pagina: int = 1,
+    por_pagina: int = LISTAS_POR_PAGINA,
+) -> Pagina[PreviaAtividade]:
+    """
+    Uma página das prévias das atividades de um evento (listagem),
+    ordenadas pelo id; ``total`` conta as atividades do evento.
+    """
+    total = contar_linhas(
+        """
+        SELECT COUNT(*) AS total
+        FROM atividade
+        WHERE id_evento = :id_evento
+        """,
+        {"id_evento": evento_id},
+    )
+    limite, deslocamento = limites(num_pagina, por_pagina)
     query = text(
         """
         SELECT a.id_evento, a.id, a.nome, a.sala,
@@ -419,13 +440,22 @@ def listar_atividades(evento_id: int) -> list[PreviaAtividade]:
         FROM atividade a
         WHERE a.id_evento = :id_evento
         ORDER BY a.id
+        LIMIT :limite OFFSET :deslocamento
         """
     )
+    params = {
+        "id_evento": evento_id,
+        "limite": limite,
+        "deslocamento": deslocamento,
+    }
     with session_maker() as session:
-        return [
-            PreviaAtividade(**dict(row))
-            for row in session.execute(query, {"id_evento": evento_id}).mappings()
-        ]
+        rows = session.execute(query, params).mappings()
+    return Pagina(
+        itens=[PreviaAtividade(**dict(row)) for row in rows],
+        total=total,
+        num_pagina=num_pagina,
+        por_pagina=por_pagina,
+    )
 
 
 def obter_atividade(atividade_id: int, evento_id: int | None = None) -> Atividade:
@@ -556,14 +586,30 @@ def criar_atividade(evento_id: int, entrada: EntradaAtividade) -> Atividade:
     )
 
 
-def listar_atividades_com_ministrantes(evento_id: int) -> list[Atividade]:
+def listar_atividades_com_ministrantes(
+    evento_id: int,
+    num_pagina: int = 1,
+    por_pagina: int = LISTAS_POR_PAGINA,
+) -> Pagina[Atividade]:
     """
-    Todas as atividades de um evento, com descrição, vagas e ministrantes,
-    ordenadas pelo horário de início.
+    Uma página das atividades de um evento, com descrição, vagas e
+    ministrantes, ordenadas pelo horário de início; ``total`` conta todas
+    as atividades do evento.
 
-    Usa duas consultas (atividades e ministrantes do evento inteiro) em vez
-    de uma por atividade.
+    Usa três consultas em vez de uma por atividade: a contagem, a página de
+    atividades e os ministrantes apenas das atividades da página (``:ids``
+    vira um array do Postgres pelo psycopg2).
     """
+    params = {"id_evento": evento_id}
+    total = contar_linhas(
+        """
+        SELECT COUNT(*) AS total
+        FROM atividade
+        WHERE id_evento = :id_evento
+        """,
+        {"id_evento": evento_id},
+    )
+    limite, deslocamento = limites(num_pagina, por_pagina)
     atividades_query = text(
         """
         SELECT a.id_evento, a.id, a.nome, a.sala,
@@ -571,6 +617,7 @@ def listar_atividades_com_ministrantes(evento_id: int) -> list[Atividade]:
         FROM atividade a
         WHERE a.id_evento = :id_evento
         ORDER BY a.data_hora_inicio, a.id
+        LIMIT :limite OFFSET :deslocamento
         """
     )
     ministrantes_query = text(
@@ -582,16 +629,29 @@ def listar_atividades_com_ministrantes(evento_id: int) -> list[Atividade]:
         FROM ministra_atividade m
         JOIN usuario_com_idade v ON v.id = m.id_usuario
         WHERE m.id_evento = :id_evento
+          AND m.id_atividade = ANY(:ids)
         ORDER BY v.nome
         """
     )
-    params = {"id_evento": evento_id}
     with session_maker() as session:
         atividades = [
             Atividade.de_linha(row)
-            for row in session.execute(atividades_query, params).mappings()
+            for row in session.execute(
+                atividades_query,
+                {**params, "limite": limite, "deslocamento": deslocamento},
+            ).mappings()
         ]
         por_id = {a.id: a for a in atividades}
-        for row in session.execute(ministrantes_query, params).mappings():
-            por_id[row["id_atividade"]].ministrantes.append(Ministrante.de_linha(row))
-    return atividades
+        if por_id:
+            for row in session.execute(
+                ministrantes_query, {**params, "ids": list(por_id)}
+            ).mappings():
+                por_id[row["id_atividade"]].ministrantes.append(
+                    Ministrante.de_linha(row)
+                )
+    return Pagina(
+        itens=atividades,
+        total=total,
+        num_pagina=num_pagina,
+        por_pagina=por_pagina,
+    )

@@ -14,6 +14,12 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.database import session_maker
+from app.database.repository import contar_linhas
+from app.database.repository.paginacao import (
+    LISTAS_POR_PAGINA,
+    Pagina,
+    limites,
+)
 from app.database.repository.inscription import (
     InscricaoEvento,
     PresencaAtividade,
@@ -123,8 +129,22 @@ class Usuario:
                 session.commit()
                 return True
 
-    def listar_inscricoes(self) -> list[InscricaoEvento]:
-        """Inscrições do usuário em eventos, com dados do evento para exibição."""
+    def listar_inscricoes(
+        self, num_pagina: int = 1, por_pagina: int = LISTAS_POR_PAGINA
+    ) -> Pagina[InscricaoEvento]:
+        """
+        Uma página das inscrições do usuário em eventos, com dados do evento
+        para exibição; ``total`` conta todas as inscrições do usuário.
+        """
+        total = contar_linhas(
+            """
+            SELECT COUNT(*) AS total
+            FROM inscricao_evento
+            WHERE id_usuario = :id_usuario
+            """,
+            {"id_usuario": self.id},
+        )
+        limite, deslocamento = limites(num_pagina, por_pagina)
 
         query = text(
             """
@@ -135,20 +155,51 @@ class Usuario:
             JOIN evento e ON e.id = i.id_evento
             WHERE i.id_usuario = :id_usuario
             ORDER BY i.id_evento
+            LIMIT :limite OFFSET :deslocamento
             """
         )
 
         with session_maker() as session:
-            rows = session.execute(query, {"id_usuario": self.id}).mappings()
-            return [InscricaoEvento.de_linha(r) for r in rows]
+            rows = session.execute(
+                query,
+                {
+                    "id_usuario": self.id,
+                    "limite": limite,
+                    "deslocamento": deslocamento,
+                },
+            ).mappings()
+            pagina = [InscricaoEvento.de_linha(r) for r in rows]
+        return Pagina(
+            itens=pagina,
+            total=total,
+            num_pagina=num_pagina,
+            por_pagina=por_pagina,
+        )
 
-    def listar_presencas(self, evento_id: int | None = None) -> list[PresencaAtividade]:
+    def listar_presencas(
+        self,
+        evento_id: int | None = None,
+        num_pagina: int = 1,
+        por_pagina: int = LISTAS_POR_PAGINA,
+    ) -> Pagina[PresencaAtividade]:
         """
-        Atividades em que o usuário esteve presente, com dados do evento e da
-        atividade. ``evento_id`` é opcional e restringe a busca a um evento.
+        Uma página das atividades em que o usuário esteve presente, com
+        dados do evento e da atividade. ``evento_id`` é opcional e restringe
+        a busca a um evento; ``total`` conta as presenças da busca inteira.
         """
+        evento_clause = (
+            "" if evento_id is None else " AND p.id_evento = :evento_id"
+        )
+        total = contar_linhas(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM presenca_atividade p
+            WHERE p.id_usuario = :id_usuario{evento_clause}
+            """,
+            {"id_usuario": self.id, "evento_id": evento_id},
+        )
+        limite, deslocamento = limites(num_pagina, por_pagina)
 
-        evento_clause = "AND p.id_evento = :evento_id" if evento_id is not None else ""
         query = text(
             f"""
             SELECT p.id_usuario, p.id_evento, p.id_atividade,
@@ -160,15 +211,26 @@ class Usuario:
                      AND a.id = p.id_atividade
             WHERE p.id_usuario = :id_usuario {evento_clause}
             ORDER BY p.id_evento, p.id_atividade
+            LIMIT :limite OFFSET :deslocamento
             """
         )
-        params: dict[str, int] = {"id_usuario": self.id}
+        params: dict[str, int] = {
+            "id_usuario": self.id,
+            "limite": limite,
+            "deslocamento": deslocamento,
+        }
         if evento_id is not None:
             params["evento_id"] = evento_id
 
         with session_maker() as session:
             rows = session.execute(query, params).mappings()
-            return [PresencaAtividade.de_linha(r) for r in rows]
+            pagina = [PresencaAtividade.de_linha(r) for r in rows]
+        return Pagina(
+            itens=pagina,
+            total=total,
+            num_pagina=num_pagina,
+            por_pagina=por_pagina,
+        )
 
 
 def listar_usuarios() -> list[Usuario]:

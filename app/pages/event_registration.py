@@ -17,10 +17,12 @@ from nicegui import ui
 from app.auth import exigir_administrador, obter_usuario
 from app.database.repository.event import Evento, EventoNaoEncontrado, obter_evento
 from app.database.repository.inscription_list import (
+    contar_inscricoes_pendentes,
     listar_inscricoes_do_evento,
     obter_inscricao,
 )
 from app.database.repository.user import Usuario
+from app.database.repository.paginacao import LISTAS_POR_PAGINA
 from app.exceptions import (
     AprovacaoPropriaProibida,
     InscricaoNaoPendente,
@@ -32,6 +34,7 @@ from app.pages.layout import (
     meia_badge,
     nao_encontrado,
     pagina,
+    paginacao,
     status_badge,
     voltar_ao_topo,
 )
@@ -44,6 +47,7 @@ from app.pages.layout import (
 )
 def pagina_inscricoes_do_evento(
     evento_id: int,
+    page: int = 1,
 ):
     try:
         evento: Evento = obter_evento(evento_id)
@@ -52,6 +56,17 @@ def pagina_inscricoes_do_evento(
             "event_busy", "Evento não encontrado", "/", "Voltar para a lista de eventos"
         )
         return
+
+    resultado = listar_inscricoes_do_evento(evento_id, num_pagina=page)
+
+    if page != resultado.pagina_valida:
+        ui.navigate.to(
+            f"/event/{evento_id}/registrations?page={resultado.pagina_valida}"
+        )
+        return
+
+    # pendentes contadas sobre o evento inteiro: o aviso aparece em qualquer página
+    pendentes = contar_inscricoes_pendentes(evento_id)
 
     with ui.column().classes("w-full gap-4").style("max-width: 1000px; margin: 0 auto"):
         with ui.row().classes("w-full items-center"):
@@ -63,16 +78,14 @@ def pagina_inscricoes_do_evento(
 
         @ui.refreshable
         def lista() -> None:
-            inscricoes = listar_inscricoes_do_evento(evento_id)
-            if not inscricoes:
+            if resultado.total == 0:
                 _ = ui.label("Nenhuma inscrição registrada.").classes("text-grey-7")
                 return
-            pendentes = sum(1 for i in inscricoes if i.status == "pendente")
             if pendentes:
                 _ = ui.label(
                     f"{pendentes} inscrição(ões) aguardando avaliação."
                 ).classes("text-warning text-body2")
-            for inscricao in inscricoes:
+            for inscricao in resultado.itens:
                 with (
                     ui.card().classes("w-full"),
                     ui.row().classes("w-full items-center gap-3"),
@@ -95,6 +108,13 @@ def pagina_inscricoes_do_evento(
                     ).props("flat dense no-caps color=primary")
 
         lista()
+
+    paginacao(
+        total=resultado.total,
+        num_pagina=page,
+        por_pagina=LISTAS_POR_PAGINA,
+        caminho=f"/event/{evento_id}/registrations",
+    )
 
     voltar_ao_topo()
 

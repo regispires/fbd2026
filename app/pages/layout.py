@@ -10,6 +10,7 @@ import functools
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime
+from math import ceil
 from typing import Any
 from nicegui import app, events, ui
 
@@ -323,6 +324,46 @@ def cabecalho(usuario: Usuario | None) -> None:
                     ui.item_section().props("avatar"),
                 ):
                     _ = ui.icon("login")
+
+
+def paginacao(
+    *,
+    total: int,
+    num_pagina: int,
+    por_pagina: int,
+    caminho: str,
+) -> None:
+    """
+    Rodapé de paginação para as listagens: texto "Mostrando X–Y de Z" e o
+    paginador com números de página (Quasar ``QPagination``).
+
+    Ao trocar de página, a mesma rota é recarregada com ``?page=N``: o
+    navegador navega de novo, o histórico volta/avança por página e cada
+    página revalida a sessão do usuário. ``num_pagina`` é limitado às
+    páginas existentes; ``caminho`` é a rota atual (o ``?page=N`` é
+    acrescentado aqui). Listas que cabem em uma página não renderizam o
+    rodapé.
+    """
+    if total <= por_pagina:
+        return
+
+    with ui.row().classes("w-full items-center justify-center gap-x-6 gap-y-2"):
+        pagina = min(max(num_pagina, 1), ceil(total / por_pagina))
+        inicio = (pagina - 1) * por_pagina + 1
+        fim = min(inicio + por_pagina - 1, total)
+        _ = ui.label(f"Mostrando {inicio}–{fim} de {total}").classes("text-caption text-grey-7")
+        _ = (
+            ui.pagination(
+                min=1,
+                max=ceil(total / por_pagina),
+                value=pagina,
+                direction_links=True,
+            )
+            .on_value_change(
+                lambda evento: ui.navigate.to(f"{caminho}?page={evento.value}")
+            )
+            .props("active-color=primary")
+        )
 
 
 def voltar_ao_topo() -> None:
