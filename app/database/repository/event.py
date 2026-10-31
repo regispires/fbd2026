@@ -36,20 +36,6 @@ from app.exceptions import (
     VagasAbaixoInscricoes,
 )
 
-# colunas + contagem de inscrições ativas, compartilhadas pelas consultas
-# de listagem e de detalhe
-_COLUNAS_EVENTO = """
-    SELECT id, nome, descricao, data_hora_inicio, data_hora_fim,
-           classificacao_indicativa, vagas, valor, localizacao::text,
-           banner, banner_thumbnail,
-           (SELECT COUNT(i.id_usuario)
-            FROM inscricao_evento i
-            WHERE i.id_evento = evento.id
-              AND i.status <> 'cancelada') AS inscritas
-    FROM evento
-"""
-
-
 @dataclass
 class Evento:
     """
@@ -226,12 +212,19 @@ class Evento:
             session.begin()
             try:
                 # ordem importa: presença e ministrantes referenciam
-                # atividades, que referenciam o evento
-                for tabela in ("presenca_atividade", "ministra_atividade", "atividade"):
-                    _ = session.execute(
-                        text(f"DELETE FROM {tabela} WHERE id_evento = :id"),
-                        {"id": self.id},
-                    )
+                # atividades, então as atividades por último
+                _ = session.execute(
+                    text("DELETE FROM presenca_atividade WHERE id_evento = :id"),
+                    {"id": self.id},
+                )
+                _ = session.execute(
+                    text("DELETE FROM ministra_atividade WHERE id_evento = :id"),
+                    {"id": self.id},
+                )
+                _ = session.execute(
+                    text("DELETE FROM atividade WHERE id_evento = :id"),
+                    {"id": self.id},
+                )
                 result = session.execute(query, {"id": self.id})
             except IntegrityError as e:
                 raise EventoComDependencias from e
@@ -260,11 +253,23 @@ def listar_eventos(
     Uma página dos eventos, ordenados pelo início (cartões da página
     inicial); ``total`` conta todos os eventos cadastrados.
     """
-    total = contar_linhas("SELECT COUNT(*) AS total FROM evento")
+    total = contar_linhas(
+        """
+        SELECT COUNT(id) AS total
+        FROM evento
+        """
+    )
     limite, deslocamento = limites(num_pagina, por_pagina)
     query = text(
-        f"""
-        {_COLUNAS_EVENTO}
+        """
+        SELECT id, nome, descricao, data_hora_inicio, data_hora_fim,
+               classificacao_indicativa, vagas, valor, localizacao::text,
+               banner, banner_thumbnail,
+               (SELECT COUNT(i.id_usuario)
+                FROM inscricao_evento i
+                WHERE i.id_evento = evento.id
+                  AND i.status <> 'cancelada') AS inscritas
+        FROM evento
         ORDER BY data_hora_inicio, id
         LIMIT :limite OFFSET :deslocamento
         """
@@ -287,7 +292,19 @@ def obter_evento(evento_id: int) -> Evento:
     Também preenche ``inscritas`` (inscrições não canceladas), usado pela
     página de detalhes para mostrar as vagas disponíveis.
     """
-    query = text(f"{_COLUNAS_EVENTO} WHERE id = :evento_id LIMIT 1")
+    query = text(
+        """
+        SELECT id, nome, descricao, data_hora_inicio, data_hora_fim,
+               classificacao_indicativa, vagas, valor, localizacao::text,
+               banner, banner_thumbnail,
+               (SELECT COUNT(i.id_usuario)
+                FROM inscricao_evento i
+                WHERE i.id_evento = evento.id
+                  AND i.status <> 'cancelada') AS inscritas
+        FROM evento
+        WHERE id = :evento_id LIMIT 1
+        """
+    )
     with session_maker() as session:
         row = session.execute(query, {"evento_id": evento_id}).mappings().first()
     if row is None:

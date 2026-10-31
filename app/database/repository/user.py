@@ -138,7 +138,7 @@ class Usuario:
         """
         total = contar_linhas(
             """
-            SELECT COUNT(*) AS total
+            SELECT COUNT(id_usuario) AS total
             FROM inscricao_evento
             WHERE id_usuario = :id_usuario
             """,
@@ -187,21 +187,19 @@ class Usuario:
         dados do evento e da atividade. ``evento_id`` é opcional e restringe
         a busca a um evento; ``total`` conta as presenças da busca inteira.
         """
-        evento_clause = (
-            "" if evento_id is None else " AND p.id_evento = :evento_id"
-        )
         total = contar_linhas(
-            f"""
-            SELECT COUNT(*) AS total
+            """
+            SELECT COUNT(p.id_usuario) AS total
             FROM presenca_atividade p
-            WHERE p.id_usuario = :id_usuario{evento_clause}
+            WHERE p.id_usuario = :id_usuario
+              AND (:evento_id IS NULL OR p.id_evento = :evento_id)
             """,
             {"id_usuario": self.id, "evento_id": evento_id},
         )
         limite, deslocamento = limites(num_pagina, por_pagina)
 
         query = text(
-            f"""
+            """
             SELECT p.id_usuario, p.id_evento, p.id_atividade,
                    e.nome AS evento_nome,
                    a.nome AS atividade_nome, a.sala
@@ -209,18 +207,18 @@ class Usuario:
             JOIN evento e ON e.id = p.id_evento
             JOIN atividade a ON a.id_evento = p.id_evento
                      AND a.id = p.id_atividade
-            WHERE p.id_usuario = :id_usuario {evento_clause}
+            WHERE p.id_usuario = :id_usuario
+              AND (:evento_id IS NULL OR p.id_evento = :evento_id)
             ORDER BY p.id_evento, p.id_atividade
             LIMIT :limite OFFSET :deslocamento
             """
         )
         params: dict[str, int] = {
             "id_usuario": self.id,
+            "evento_id": evento_id,
             "limite": limite,
             "deslocamento": deslocamento,
         }
-        if evento_id is not None:
-            params["evento_id"] = evento_id
 
         with session_maker() as session:
             rows = session.execute(query, params).mappings()

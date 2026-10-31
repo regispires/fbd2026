@@ -426,7 +426,7 @@ def listar_atividades(
     """
     total = contar_linhas(
         """
-        SELECT COUNT(*) AS total
+        SELECT COUNT(id) AS total
         FROM atividade
         WHERE id_evento = :id_evento
         """,
@@ -465,19 +465,17 @@ def obter_atividade(atividade_id: int, evento_id: int | None = None) -> Atividad
     ``atividade_id`` é único no banco; ``evento_id`` é opcional e, quando
     dado, restringe a busca a um evento específico.
     """
-    evento_clause = "AND a.id_evento = :id_evento" if evento_id is not None else ""
     query = text(
-        f"""
+        """
         SELECT a.id_evento, a.id, a.nome, a.sala,
                a.data_hora_inicio, a.data_hora_fim, a.descricao, a.vagas
         FROM atividade a
-        WHERE a.id = :id {evento_clause}
+        WHERE a.id = :id
+          AND (:id_evento IS NULL OR a.id_evento = :id_evento)
         LIMIT 1
         """
     )
-    params: dict[str, int] = {"id": atividade_id}
-    if evento_id is not None:
-        params["id_evento"] = evento_id
+    params: dict[str, int] = {"id": atividade_id, "id_evento": evento_id}
     with session_maker() as session:
         row = session.execute(query, params).mappings().first()
     if row is None:
@@ -603,7 +601,7 @@ def listar_atividades_com_ministrantes(
     params = {"id_evento": evento_id}
     total = contar_linhas(
         """
-        SELECT COUNT(*) AS total
+        SELECT COUNT(id) AS total
         FROM atividade
         WHERE id_evento = :id_evento
         """,

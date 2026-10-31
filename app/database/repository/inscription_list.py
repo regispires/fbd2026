@@ -241,7 +241,7 @@ def listar_inscricoes_do_evento(
     params = {"event_id": evento_id}
     total = contar_linhas(
         """
-        SELECT COUNT(*) AS total
+        SELECT COUNT(id_usuario) AS total
         FROM inscricao_evento
         WHERE id_evento = :event_id
         """,
@@ -282,7 +282,7 @@ def contar_inscricoes_pendentes(evento_id: int) -> int:
     """
     return contar_linhas(
         """
-        SELECT COUNT(*) AS total
+        SELECT COUNT(id_usuario) AS total
         FROM inscricao_evento
         WHERE id_evento = :event_id AND status = 'pendente'
         """,
