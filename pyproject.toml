@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "faker==40.39.0",
+    "fastapi[standard]==0.162.0",
     "nicegui==3.17.1",
     "psycopg2-binary==2.9.13",
     "pwdlib[argon2]==0.3.1",
@@ -13,3 +14,6 @@ dependencies = [
     "sqlalchemy==2.1.1",
     "tzdata==2026.4",
 ]
+
+[tool.fastapi]
+entrypoint = "app.main:app"

@@ -19,6 +19,18 @@ O valor da variável STORAGE_SECRET pode ser gerado com o seguinte código pytho
  secrets.token_urlsafe(32)
 ```
 
+## Executando
+
+A aplicação é servida pelo CLI do FastAPI, que sobe o app FastAPI de
+`app/main.py` com o NiceGUI montado:
+
+```bash
+uv run fastapi dev
+```
+
+O servidor fica disponível em http://127.0.0.1:8000 e recarrega
+automaticamente a cada alteração no código. Em produção use `fastapi run`.
+
 ## Etapas
 
 ### Diagrama ER

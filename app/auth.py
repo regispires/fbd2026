@@ -17,19 +17,20 @@ O fluxo é o seguinte:
 
 Este módulo atua como controller da API de autenticação: valida o cookie
 (``GerenciadorDeSessao``) e implementa as rotas ``/api/login`` e
-``/api/logout``. Todas as operações de banco sobre a tabela ``sessao``
-ficam em ``app.database.repository.session``.
+``/api/logout``, declaradas no ``router`` de ``APIRouter`` (e não no app do
+NiceGUI) para que fiquem registradas no app FastAPI da aplicação.
+Todas as operações de banco sobre a tabela ``sessao`` ficam em
+``app.database.repository.session``.
 """
 
 from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import Annotated, override
 
-from fastapi import Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.params import Cookie
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import APIKeyCookie
-from nicegui import app
 from pydantic import BaseModel
 
 from app.database.repository import garantir_timezone
@@ -47,6 +48,10 @@ from app.database.repository.user import (
 from app.database.settings import settings
 
 NOME_COOKIE = "session_cookie"
+
+# rotas JSON da API de autenticação: são incluídas no app FastAPI da
+# aplicação (ver ``app.main``), e não no app do NiceGUI
+router = APIRouter(prefix="/api", tags=["autenticação"])
 
 
 class GerenciadorDeSessao(APIKeyCookie):
@@ -155,7 +160,7 @@ class RequisicaoLogin(BaseModel):
     senha: str
 
 
-@app.post("/api/login", response_model=None)
+@router.post("/login", response_model=None)
 def login(payload: RequisicaoLogin) -> JSONResponse:
     """
     Valida as credenciais enviadas em JSON, cria a sessão e define o cookie.
@@ -188,7 +193,7 @@ def login(payload: RequisicaoLogin) -> JSONResponse:
     return response
 
 
-@app.post("/api/logout", response_model=None)
+@router.post("/logout", response_model=None)
 def logout(token: Annotated[str | None, Cookie(alias=NOME_COOKIE)]) -> RedirectResponse:
     """Remove a sessão do banco e limpa o cookie, redirecionando para ``/login``."""
     response = RedirectResponse(url="/login", status_code=HTTPStatus.SEE_OTHER)

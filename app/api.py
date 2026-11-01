@@ -4,21 +4,27 @@ Rotas de API de inscrições.
 O download do comprovante é a única rota de arquivo da aplicação: o
 comprovante fica na coluna BYTEA ``comprovante_usuario`` e só o dono da
 inscrição (ou um administrador) pode baixá-lo.
+
+As rotas são declaradas no ``router`` de ``APIRouter`` (e não no app do
+NiceGUI) para que fiquem registradas no app FastAPI da aplicação.
 """
 
 from http import HTTPStatus
 from typing import Annotated
 
-from fastapi import Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
-from nicegui import app
 
 from app.auth import obter_usuario
 from app.database.repository.inscription_list import obter_inscricao
 from app.database.repository.user import Usuario
 
+# rotas JSON da API: são incluídas no app FastAPI da aplicação
+# (ver ``app.main``), e não no app do NiceGUI
+router = APIRouter(prefix="/api", tags=["inscrições"])
 
-@app.get("/api/registrations/{evento_id}/{usuario_id}/comprovante")
+
+@router.get("/registrations/{evento_id}/{usuario_id}/comprovante")
 def baixar_comprovante(
     evento_id: int,
     usuario_id: int,
