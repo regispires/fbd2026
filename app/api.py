@@ -50,7 +50,7 @@ def baixar_comprovante(
         media_type="application/octet-stream",
         headers={
             "Content-Disposition": (
-                f'attachment; filename="comprovante-evento-{evento_id}-usuario-{usuario_id}"'
+                f'attachment; filename="comprovante-evento-{evento_id}-usuario-{usuario_id}.pdf"'
             )
         },
     )
