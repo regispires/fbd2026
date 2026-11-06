@@ -90,7 +90,7 @@ erDiagram
         datetime data_inscricao
         string status
         string comentario_administrador
-        string comprovante_usuario BYTEA
+        bytea comprovante_usuario
         float valor
         boolean meia
     }
