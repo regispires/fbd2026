@@ -35,6 +35,11 @@ def pagina_inicial(
         if eh_admin:
             _ = ui.space()
             _ = ui.button(
+                "Estatísticas",
+                icon="insights",
+                on_click=lambda: ui.navigate.to("/event/dashboard"),
+            ).props("flat no-caps")
+            _ = ui.button(
                 "Criar evento",
                 icon="add",
                 on_click=lambda: dialogo_criar_evento(

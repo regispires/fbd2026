@@ -569,6 +569,10 @@ def pagina_evento(
                     "Inscrições",
                     f"/event/{evento.id}/registrations",
                 ).props("flat dense no-caps")
+                _ = ui.link(
+                    "Estatísticas",
+                    f"/event/dashboard/{evento.id}",
+                ).classes("q-ml-md")
 
         if evento.banner:
             _ = (
