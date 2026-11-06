@@ -80,6 +80,13 @@ class ComprovanteNaoEhPdf(Exception):
     """
 
 
+class ImagemInvalida(Exception):
+    """
+    O arquivo enviado como banner do evento não é uma imagem que possa ser
+    lida (formato não suportado ou arquivo corrompido).
+    """
+
+
 class EventoSemAtividade(Exception):
     """
     A operação deixaria o evento sem nenhuma atividade, o que viola a regra

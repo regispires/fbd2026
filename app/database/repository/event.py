@@ -104,7 +104,8 @@ class Evento:
         - o novo intervalo de datas precisa continuar contendo todas as
           atividades existentes (``HorarioAtividadeInvalido``).
 
-        ``banner`` e ``banner_thumbnail`` são URLs; ``None`` limpa a coluna.
+        ``banner`` e ``banner_thumbnail`` são URLs (os arquivos são gravados
+        por ``app.imagens``); ``None`` limpa a coluna.
         """
         _exigir_par_lat_lng(latitude, longitude)
         _exigir_horario_valido(data_hora_inicio, data_hora_fim)

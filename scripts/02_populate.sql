@@ -42,43 +42,52 @@ SELECT setval(pg_get_serial_sequence('usuario', 'id'), (SELECT MAX(id) FROM usua
 -- Eventos
 -- =====================================================================
 -- localizacao é POINT(longitude, latitude)
--- banner e banner_thumbnail usam o picsum.photos com uma seed por evento: a mesma
--- seed devolve sempre a mesma imagem, em qualquer tamanho pedido
+-- banner e banner_thumbnail apontam para arquivos da pasta upload/banner (servida
+-- em /imagens), gerados por app.imagens.salvar_banner a partir das imagens
+-- originalmente em https://picsum.photos/seed/evento-N/1200/400
 
 INSERT INTO evento (id, nome, descricao, data_hora_inicio, data_hora_fim, classificacao_indicativa, vagas, localizacao, banner, banner_thumbnail, valor) VALUES
     (1, 'Semana Acadêmica de Computação 2026',
         'Uma semana de palestras, minicursos e mesas redondas sobre computação.',
         '2026-05-11 08:00:00-03', '2026-05-15 18:00:00-03', NULL, 100, POINT(-38.5743, -3.7461),
-        'https://picsum.photos/seed/evento-1/1200/400', 'https://picsum.photos/seed/evento-1/400/225', 50.0),
+        '/imagens/banner/87fb9973-2fc6-42bd-9290-838537fd09b5.jpg',
+        '/imagens/banner/87fb9973-2fc6-42bd-9290-838537fd09b5_thumbnail.jpg', 50.0),
     (2, 'Workshop de Banco de Dados',
         'Workshop prático sobre modelagem e consultas SQL.',
         '2026-08-20 13:00:00-03', '2026-08-20 18:00:00-03', 12, 30, POINT(-38.5743, -3.7461),
-        'https://picsum.photos/seed/evento-2/1200/400', 'https://picsum.photos/seed/evento-2/400/225', 30.0),
+        '/imagens/banner/8719cf2b-b3ae-4c1f-b945-d9104198fee4.jpg',
+        '/imagens/banner/8719cf2b-b3ae-4c1f-b945-d9104198fee4_thumbnail.jpg', 30.0),
     (3, 'Hackathon Cidades Inteligentes',
         'Maratona de 36 horas para desenvolver soluções para problemas urbanos.',
         '2026-11-07 09:00:00-03', '2026-11-08 18:00:00-03', 16, 40, POINT(-38.5267, -3.7319),
-        'https://picsum.photos/seed/evento-3/1200/400', 'https://picsum.photos/seed/evento-3/400/225', 20.0),
+        '/imagens/banner/3467384b-2c12-410b-acc0-5119fc43aa40.jpg',
+        '/imagens/banner/3467384b-2c12-410b-acc0-5119fc43aa40_thumbnail.jpg', 20.0),
     (4, 'Encontro de Segurança da Informação',
         'Palestras e um CTF introdutório sobre segurança ofensiva e defensiva.',
         '2026-12-03 08:00:00-03', '2026-12-04 17:00:00-03', 18, 50, NULL,
-        'https://picsum.photos/seed/evento-4/1200/400', 'https://picsum.photos/seed/evento-4/400/225', 80.0),
+        '/imagens/banner/eef4cea4-0fc2-4329-80d0-49b52f411ccb.jpg',
+        '/imagens/banner/eef4cea4-0fc2-4329-80d0-49b52f411ccb_thumbnail.jpg', 80.0),
     -- evento lotado: 3 vagas e 3 inscrições ativas (confirmadas + pendentes)
     (5, 'Oficina de Robótica para Iniciantes',
         'Oficina introdutória de robótica com kits Arduino.',
         '2026-10-25 08:00:00-03', '2026-10-25 12:00:00-03', 10, 3, POINT(-38.5431, -3.7172),
-        'https://picsum.photos/seed/evento-5/1200/400', 'https://picsum.photos/seed/evento-5/400/225', 15.0),
+        '/imagens/banner/cf34308c-76fe-437c-8449-1c7a995cb21a.jpg',
+        '/imagens/banner/cf34308c-76fe-437c-8449-1c7a995cb21a_thumbnail.jpg', 15.0),
     (6, 'Feira de Profissões em Tecnologia',
         'Estandes de empresas e conversas com profissionais da área.',
         '2027-01-20 09:00:00-03', '2027-01-20 17:00:00-03', NULL, 200, POINT(-38.5267, -3.7319),
-        'https://picsum.photos/seed/evento-6/1200/400', 'https://picsum.photos/seed/evento-6/400/225', 0.0),
+        '/imagens/banner/0b8ebf95-9403-4311-9dd2-163bd10cce77.jpg',
+        '/imagens/banner/0b8ebf95-9403-4311-9dd2-163bd10cce77_thumbnail.jpg', 0.0),
     (7, 'Bootcamp de Desenvolvimento Web',
         'Três dias de imersão em HTML, CSS, JavaScript e APIs REST.',
         '2027-02-08 08:00:00-03', '2027-02-10 18:00:00-03', 14, 35, POINT(-38.5743, -3.7461),
-        'https://picsum.photos/seed/evento-7/1200/400', 'https://picsum.photos/seed/evento-7/400/225', 60.0),
+        '/imagens/banner/c9c3618f-160e-4582-bcca-682190585248.jpg',
+        '/imagens/banner/c9c3618f-160e-4582-bcca-682190585248_thumbnail.jpg', 60.0),
     (8, 'Simpósio de Ciência de Dados',
         'Palestras sobre aprendizado de máquina, visualização e ética em dados.',
         '2027-03-15 08:30:00-03', '2027-03-16 17:30:00-03', NULL, 120, NULL,
-        'https://picsum.photos/seed/evento-8/1200/400', 'https://picsum.photos/seed/evento-8/400/225', 40.0);
+        '/imagens/banner/efa1dc3a-b9a1-4aa4-af61-5d1da5abdcb1.jpg',
+        '/imagens/banner/efa1dc3a-b9a1-4aa4-af61-5d1da5abdcb1_thumbnail.jpg', 40.0);
 
 -- ids foram inseridos explicitamente, então a sequência precisa ser ajustada
 SELECT setval(pg_get_serial_sequence('evento', 'id'), (SELECT MAX(id) FROM evento));

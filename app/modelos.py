@@ -8,11 +8,14 @@ os kwargs das operações de escrita, evitando cópias campo a campo nos
 dialogs das páginas.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from app.database.repository.event import Evento
+from app.imagens import remover_banner, salvar_banner
 
 
 @dataclass
@@ -34,8 +37,11 @@ class ValoresEvento:
     valor: float
     latitude: float | None
     longitude: float | None
+    # URLs do banner salvo; ``imagem_banner`` é um arquivo novo enviado pelo
+    # formulário, que só vira URL em ``gravando_banner``
     banner: str | None
     banner_thumbnail: str | None
+    imagem_banner: bytes | None = None
 
     @classmethod
     def de_evento(cls, evento: Evento) -> "ValoresEvento":
@@ -53,6 +59,27 @@ class ValoresEvento:
             banner=evento.banner,
             banner_thumbnail=evento.banner_thumbnail,
         )
+
+    @contextmanager
+    def gravando_banner(self) -> Iterator[None]:
+        """
+        Grava a imagem nova (se houver) e a sua miniatura em disco,
+        substituindo ``banner``/``banner_thumbnail`` pelas URLs públicas
+        antes da escrita no banco, que deve acontecer dentro do bloco.
+
+        Se a escrita falhar, os arquivos recém-gravados são removidos para
+        não deixar imagens órfãs. Lança ``ImagemInvalida`` quando o arquivo
+        enviado não é uma imagem.
+        """
+        if self.imagem_banner is None:
+            yield
+            return
+        self.banner, self.banner_thumbnail = salvar_banner(self.imagem_banner)
+        try:
+            yield
+        except BaseException:
+            remover_banner(self.banner, self.banner_thumbnail)
+            raise
 
     def parametros(self) -> dict[str, Any]:
         """
