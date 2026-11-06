@@ -261,8 +261,8 @@ def cabecalho(usuario: Usuario | None) -> None:
     Cabeçalho com o título (link para a página inicial) e o menu do usuário.
 
     Não é chamado pelas páginas: o decorator ``pagina`` o renderiza uma única
-    vez para cada rota registrada da aplicação. O menu mostra "Minhas
-    inscrições" e "Sair" quando ``usuario`` é um usuário autenticado (páginas
+    vez para cada rota registrada da aplicação. O menu mostra "Meus dados",
+    "Minhas inscrições" e "Sair" quando ``usuario`` é um usuário autenticado (páginas
     privadas o declaram com ``Annotated[Usuario, Depends(obter_usuario)]``),
     e "Entrar" caso contrário (páginas públicas usam ``Usuario | None`` com
     ``Depends(obter_usuario_opcional)``).
@@ -303,6 +303,15 @@ def cabecalho(usuario: Usuario | None) -> None:
                     ui.item_section().props("avatar"),
                 ):
                     _ = ui.label(usuario.nome)
+
+                with (
+                    ui.menu_item(
+                        "Meus dados",
+                        on_click=lambda: ui.navigate.to("/user/profile"),
+                    ),
+                    ui.item_section().props("avatar"),
+                ):
+                    _ = ui.icon("manage_accounts")
 
                 with (
                     ui.menu_item(

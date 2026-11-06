@@ -9,7 +9,6 @@ navegador, como na página de login) e navega para ``/``.
 """
 
 import json
-from datetime import date, datetime
 
 from fastapi import Request
 from nicegui import ui
@@ -21,38 +20,19 @@ from app.database.repository.user import (
     criar_usuario,
 )
 from app.exceptions import UsuarioRepetido
+from app.forms.usuario import (
+    MENSAGEM_TAMANHO_SENHA,
+    ler_nascimento,
+    senha_com_tamanho_minimo,
+)
 from app.forms.validacao import (
     campo_data,
     cpf_valido,
     email_valido,
-    mostrar_erro,
     obrigatorio,
     somente_digitos,
 )
 from app.pages.layout import pagina
-
-TAMANHO_MINIMO_SENHA = 8
-
-
-def _ler_nascimento(campo: ui.date_input) -> date | None:
-    """
-    Valida a data de nascimento (``date_input`` não aceita ``validation``,
-    então o erro é exibido via ``mostrar_erro``); ``None`` se inválida.
-    """
-    texto = (campo.value or "").strip()
-    if not texto:
-        mostrar_erro(campo, "Informe a data de nascimento.")
-        return None
-    try:
-        nascimento = datetime.strptime(texto, "%d/%m/%Y").date()
-    except ValueError:
-        mostrar_erro(campo, "Data inválida (use dia/mês/ano).")
-        return None
-    if nascimento > date.today():
-        mostrar_erro(campo, "A data de nascimento não pode estar no futuro.")
-        return None
-    mostrar_erro(campo, None)
-    return nascimento
 
 
 # tela dedicada, como a de login: sem o cabeçalho padrão da aplicação
@@ -106,7 +86,7 @@ def pagina_cadastro(request: Request):
         nascimento = campo_data("Data de nascimento *").classes("w-full")
         # o calendário abre na escolha do ano, mais prático para datas antigas
         _ = nascimento.picker.props('default-view="Years"')
-        nascimento.on_value_change(lambda: _ler_nascimento(nascimento))
+        nascimento.on_value_change(lambda: ler_nascimento(nascimento))
         sexo = ui.select(
             SEXO_ROTULO,
             label="Sexo *",
@@ -125,9 +105,7 @@ def pagina_cadastro(request: Request):
             autocomplete=["new-password"],
             validation={
                 "Informe a senha.": obrigatorio,
-                f"A senha precisa ter ao menos {TAMANHO_MINIMO_SENHA} caracteres.": (
-                    lambda v: len(v or "") >= TAMANHO_MINIMO_SENHA
-                ),
+                MENSAGEM_TAMANHO_SENHA: senha_com_tamanho_minimo,
             },
         ).classes("w-full")
         confirmacao = ui.input(
@@ -160,7 +138,7 @@ def pagina_cadastro(request: Request):
                 campo.validate()
                 for campo in (nome, cpf, email, sexo, estado_civil, senha, confirmacao)
             ]
-            data_nascimento = _ler_nascimento(nascimento)
+            data_nascimento = ler_nascimento(nascimento)
             if not all(validos) or data_nascimento is None:
                 return
 

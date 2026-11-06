@@ -25,6 +25,7 @@ from app.database.repository.inscription import (
     PresencaAtividade,
 )
 from app.exceptions import (
+    SenhaIncorreta,
     UsuarioComDependencias,
     UsuarioNaoEncontrado,
     UsuarioRepetido,
@@ -107,6 +108,54 @@ class Usuario:
                 )
             except IntegrityError as e:
                 raise UsuarioRepetido from e
+            session.commit()
+
+    def alterar_senha(
+        self, senha_atual: str, nova_senha: str, sessao_atual: str | None = None
+    ) -> None:
+        """
+        Troca a senha, exigindo a senha atual (``SenhaIncorreta`` se não
+        conferir).
+
+        Na mesma transação, encerra as **outras** sessões do usuário: quem
+        tinha a senha antiga e estava logado em outro navegador perde o
+        acesso. ``sessao_atual`` é o hash do token da sessão em uso, que é
+        mantida para o usuário não ser deslogado da página em que trocou a
+        senha.
+
+        O ``FOR UPDATE`` trava a linha do usuário entre a verificação e a
+        escrita, de modo que duas trocas simultâneas não verifiquem a mesma
+        senha antiga.
+        """
+        with session_maker() as session:
+            session.begin()
+            senha_hash = session.execute(
+                text("SELECT senha_hash FROM usuario WHERE id = :id FOR UPDATE"),
+                {"id": self.id},
+            ).scalar_one_or_none()
+            if senha_hash is None:
+                raise UsuarioNaoEncontrado
+            try:
+                confere = pwd_context.verify(senha_atual, senha_hash)
+            except UnknownHashError:
+                confere = False
+            if not confere:
+                raise SenhaIncorreta
+
+            _ = session.execute(
+                text("UPDATE usuario SET senha_hash = :senha_hash WHERE id = :id"),
+                {"id": self.id, "senha_hash": pwd_context.hash(nova_senha)},
+            )
+            _ = session.execute(
+                text(
+                    """
+                    DELETE FROM sessao
+                    WHERE id_usuario = :id
+                      AND token_hash IS DISTINCT FROM :sessao_atual
+                    """
+                ),
+                {"id": self.id, "sessao_atual": sessao_atual},
+            )
             session.commit()
 
     def excluir(self) -> bool:

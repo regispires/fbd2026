@@ -20,4 +20,5 @@ from . import event_registration as event_registration
 from . import home as home
 from . import login as login
 from . import user as user
+from . import user_profile as user_profile
 from . import user_registration as user_registration

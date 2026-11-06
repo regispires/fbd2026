@@ -11,6 +11,13 @@ class UsuarioNaoEncontrado(Exception):
     """Usuário não encontrado pela chave pesquisada"""
 
 
+class SenhaIncorreta(Exception):
+    """
+    A senha atual informada para trocar a senha não confere com a
+    armazenada.
+    """
+
+
 class EventoNaoEncontrado(Exception):
     """Evento não encontrado pela chave pesquisada"""
 
