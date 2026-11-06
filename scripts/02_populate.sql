@@ -16,9 +16,13 @@ BEGIN;
 -- =====================================================================
 -- Usuários
 -- =====================================================================
--- ids inseridos explicitamente para facilitar a referência nas demais tabelas e nos testes
+-- ids inseridos explicitamente para facilitar a referência nas demais tabelas e nos testes;
+-- as colunas id são GENERATED ALWAYS AS IDENTITY, então o INSERT precisa de
+-- OVERRIDING SYSTEM VALUE, e o setval em seguida avança a sequência da
+-- identidade para que os próximos ids gerados não colidam com esses
 
-INSERT INTO usuario (id, nome, cpf, email, senha_hash, papel, sexo, estado_civil, data_nascimento) VALUES
+INSERT INTO usuario (id, nome, cpf, email, senha_hash, papel, sexo, estado_civil, data_nascimento)
+OVERRIDING SYSTEM VALUE VALUES
     ( 1, 'Ana Souza',        '10433218100', 'ana.souza@exemplo.com',        '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'administrador', 'F', 'C', '1985-03-12'),
     ( 2, 'Bruno Lima',       '96001338914', 'bruno.lima@exemplo.com',       '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'administrador', 'M', 'C', '1990-07-25'),
     ( 3, 'Carla Mendes',     '08386379499', 'carla.mendes@exemplo.com',     '$argon2id$v=19$m=65536,t=3,p=4$+7pw/TBA6s1NhK0lSn/7Eg$0yafQECHiOF1bRSMFR9z9crR2efceS82nRKCRJewG2A', 'associado',     'F', 'S', '1998-01-30'),
@@ -46,7 +50,8 @@ SELECT setval(pg_get_serial_sequence('usuario', 'id'), (SELECT MAX(id) FROM usua
 -- em /imagens), gerados por app.imagens.salvar_banner a partir das imagens
 -- originalmente em https://picsum.photos/seed/evento-N/1200/400
 
-INSERT INTO evento (id, nome, descricao, data_hora_inicio, data_hora_fim, classificacao_indicativa, vagas, localizacao, banner, banner_thumbnail, valor) VALUES
+INSERT INTO evento (id, nome, descricao, data_hora_inicio, data_hora_fim, classificacao_indicativa, vagas, localizacao, banner, banner_thumbnail, valor)
+OVERRIDING SYSTEM VALUE VALUES
     (1, 'Semana Acadêmica de Computação 2026',
         'Uma semana de palestras, minicursos e mesas redondas sobre computação.',
         '2026-05-11 08:00:00-03', '2026-05-15 18:00:00-03', NULL, 100, POINT(-38.5743, -3.7461),
@@ -97,7 +102,8 @@ SELECT setval(pg_get_serial_sequence('evento', 'id'), (SELECT MAX(id) FROM event
 -- =====================================================================
 -- ids inseridos explicitamente para facilitar a referência nas demais tabelas
 
-INSERT INTO atividade (id, id_evento, nome, descricao, sala, vagas, data_hora_inicio, data_hora_fim) VALUES
+INSERT INTO atividade (id, id_evento, nome, descricao, sala, vagas, data_hora_inicio, data_hora_fim)
+OVERRIDING SYSTEM VALUE VALUES
     -- Evento 1
     (1,  1, 'Abertura: IA na educação', 'Palestra de abertura sobre o uso de IA em sala de aula.', 'Auditório', 100, '2026-05-11 08:00:00-03', '2026-05-11 10:00:00-03'),
     (2,  1, 'Minicurso de Python', 'Introdução à linguagem Python.', 'Laboratório 1', 30, '2026-05-12 14:00:00-03', '2026-05-12 18:00:00-03'),
@@ -241,7 +247,8 @@ INSERT INTO presenca_atividade (id_usuario, id_evento, id_atividade) VALUES
 -- negócio documentadas). Válido apenas para um volume novo do banco.
 
 -- Eventos 9..13 (todos futuros, sem presenças)
-INSERT INTO evento (id, nome, descricao, data_hora_inicio, data_hora_fim, classificacao_indicativa, vagas, localizacao, banner, banner_thumbnail, valor) VALUES
+INSERT INTO evento (id, nome, descricao, data_hora_inicio, data_hora_fim, classificacao_indicativa, vagas, localizacao, banner, banner_thumbnail, valor)
+OVERRIDING SYSTEM VALUE VALUES
     ( 9, 'Curso de Introdução ao Linux',
         'Um dia de instalação, linha de comando e primeiros scripts.',
         '2027-04-05 08:00:00-04', '2027-04-05 18:00:00-04', NULL, 40, POINT(-38.5743, -3.7461),
@@ -267,7 +274,8 @@ SELECT setval(pg_get_serial_sequence('evento', 'id'), (SELECT MAX(id) FROM event
 
 -- Atividades extras: 17..26 nos eventos novos e 27..33 na Semana Acadêmica
 -- (evento 1, já realizado: as presenças abaixo dependem de atividades passadas)
-INSERT INTO atividade (id, id_evento, nome, descricao, sala, vagas, data_hora_inicio, data_hora_fim) VALUES
+INSERT INTO atividade (id, id_evento, nome, descricao, sala, vagas, data_hora_inicio, data_hora_fim)
+OVERRIDING SYSTEM VALUE VALUES
     -- Evento 9
     (17,  9, 'Instalação e primeiro contato', 'Partições, usuários e primeiros comandos.', 'Sala 101', 40, '2027-04-05 08:00:00-04', '2027-04-05 12:00:00-04'),
     (18,  9, 'Linha de comando na prática', 'Compactação, permissões, pipes e scripts simples.', 'Sala 101', 40, '2027-04-05 13:00:00-04', '2027-04-05 18:00:00-04'),

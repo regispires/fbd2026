@@ -17,8 +17,12 @@ CREATE TYPE estado_civil_usuario AS ENUM ('S', 'C', 'D');
 
 
 
+-- ids gerados pelo banco com colunas de identidade (padrão SQL), em vez do
+-- SERIAL específico do PostgreSQL: GENERATED ALWAYS impede que a aplicação
+-- informe o id por engano (só é aceito com OVERRIDING SYSTEM VALUE)
+
 CREATE TABLE IF NOT EXISTS usuario (
-    id SERIAL PRIMARY KEY,
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nome TEXT NOT NULL,
     cpf CHAR(11) UNIQUE NOT NULL,
     email TEXT UNIQUE NOT NULL,
@@ -38,7 +42,7 @@ CREATE OR REPLACE VIEW usuario_com_idade AS (
 );
 
 CREATE TABLE IF NOT EXISTS evento (
-    id SERIAL PRIMARY KEY,
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nome TEXT UNIQUE NOT NULL,
     descricao TEXT,
     data_hora_inicio TIMESTAMPTZ NOT NULL,
@@ -58,7 +62,7 @@ CREATE TABLE IF NOT EXISTS atividade (
     -- gerado pelo banco; único na tabela inteira, mas a PK é composta com o
     -- evento para que presença e ministrantes referenciem (id, id_evento) e
     -- não possam apontar para uma atividade de outro evento
-    id SERIAL UNIQUE NOT NULL,
+    id INTEGER GENERATED ALWAYS AS IDENTITY UNIQUE NOT NULL,
     id_evento INTEGER REFERENCES evento(id) NOT NULL,
     nome TEXT NOT NULL,
     descricao TEXT,
