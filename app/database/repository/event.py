@@ -16,6 +16,7 @@ from app.database.repository import (
     contar_linhas,
     contido_em,
     garantir_timezone,
+    para_bytes,
 )
 from app.database.repository.activity import EntradaAtividade
 from app.database.repository.paginacao import (
@@ -55,10 +56,11 @@ class Evento:
     vagas: int
     latitude: float | None
     longitude: float | None
-    # URLs das imagens do evento (opcionais): banner em tamanho cheio e a
-    # versão reduzida usada nas listagens
-    banner: str | None = None
-    banner_thumbnail: str | None = None
+    # imagens do evento em JPEG (colunas BYTEA, opcionais): banner em
+    # tamanho cheio e a miniatura usada nas listagens. A listagem
+    # (``listar_eventos``) não carrega o banner cheio, só a miniatura.
+    banner: bytes | None = None
+    banner_thumbnail: bytes | None = None
     # preço cheio do evento
     valor: float = 0.0
     # Contagem de inscrições ativas (não canceladas); preenchida apenas pela
@@ -70,9 +72,14 @@ class Evento:
 
     @classmethod
     def de_linha(cls, row: Mapping[str, Any]) -> "Evento":
-        """Constrói um ``Evento`` de uma linha, convertendo o POINT para floats."""
+        """
+        Constrói um ``Evento`` de uma linha, convertendo o POINT para floats
+        e as colunas BYTEA (``memoryview`` no psycopg2) para ``bytes``.
+        """
         row = dict(row)
         longitude, latitude = analisar_ponto(row.pop("localizacao"))
+        for coluna in ("banner", "banner_thumbnail"):
+            row[coluna] = para_bytes(row.get(coluna))
         return cls(latitude=latitude, longitude=longitude, **row)
 
     @property
@@ -91,8 +98,8 @@ class Evento:
         latitude: float | None,
         longitude: float | None,
         valor: float,
-        banner: str | None = None,
-        banner_thumbnail: str | None = None,
+        banner: bytes | None = None,
+        banner_thumbnail: bytes | None = None,
     ) -> None:
         """
         Atualiza o evento; o par latitude/longitude segue a regra ambos ou
@@ -104,8 +111,8 @@ class Evento:
         - o novo intervalo de datas precisa continuar contendo todas as
           atividades existentes (``HorarioAtividadeInvalido``).
 
-        ``banner`` e ``banner_thumbnail`` são URLs (os arquivos são gravados
-        por ``app.imagens``); ``None`` limpa a coluna.
+        ``banner`` e ``banner_thumbnail`` são os JPEGs gerados por
+        ``app.imagens.processar_banner``; ``None`` limpa a coluna.
         """
         _exigir_par_lat_lng(latitude, longitude)
         _exigir_horario_valido(data_hora_inicio, data_hora_fim)
@@ -253,6 +260,10 @@ def listar_eventos(
     """
     Uma página dos eventos, ordenados pelo início (cartões da página
     inicial); ``total`` conta todos os eventos cadastrados.
+
+    Os cartões só exibem a miniatura: o banner cheio não é lido do banco
+    (``NULL`` na consulta), para não trafegar as imagens grandes de cada
+    evento da página.
     """
     total = contar_linhas(
         """
@@ -265,7 +276,7 @@ def listar_eventos(
         """
         SELECT id, nome, descricao, data_hora_inicio, data_hora_fim,
                classificacao_indicativa, vagas, valor, localizacao::text,
-               banner, banner_thumbnail,
+               NULL::bytea AS banner, banner_thumbnail,
                (SELECT COUNT(i.id_usuario)
                 FROM inscricao_evento i
                 WHERE i.id_evento = evento.id
@@ -358,8 +369,8 @@ def criar_evento(
     latitude: float | None = None,
     longitude: float | None = None,
     atividades: list[EntradaAtividade] | None = None,
-    banner: str | None = None,
-    banner_thumbnail: str | None = None,
+    banner: bytes | None = None,
+    banner_thumbnail: bytes | None = None,
 ) -> Evento:
     """
     Cria um evento e suas atividades na mesma transação.

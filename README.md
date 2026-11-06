@@ -62,8 +62,8 @@ erDiagram
         int id PK
         string nome
         string descricao
-        string banner
-        string banner_thumbnail
+        bytea banner
+        bytea banner_thumbnail
         int vagas
         string classificacao_indicativa
         datetime data_hora_inicio

@@ -9,8 +9,6 @@ services:
       SESSION_DURATION_HOURS: ${SESSION_DURATION_HOURS:-24}
       STORAGE_SECRET: ${STORAGE_SECRET}
     restart: unless-stopped
-    volumes:
-      - ./upload:/upload
     ports:
       - 8000:8000
     depends_on:

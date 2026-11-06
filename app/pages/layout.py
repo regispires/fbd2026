@@ -17,6 +17,7 @@ from nicegui import app, events, ui
 from app.database.repository.activity import PreviaAtividade
 from app.database.repository.event import Evento
 from app.database.repository.user import Usuario
+from app.imagens import para_data_url
 
 # status da inscrição -> cor do badge (cores padrão do Quasar)
 STATUS_COR = {
@@ -94,7 +95,9 @@ def preco(evento: Evento) -> None:
 def corpo_evento(evento: Evento) -> None:
     """Corpo do cartão de evento: imagem (ou espaço reservado), nome, data e preço."""
     if evento.banner_thumbnail:
-        _ = ui.image(evento.banner_thumbnail).classes("w-full aspect-video")
+        _ = ui.image(para_data_url(evento.banner_thumbnail)).classes(
+            "w-full aspect-video"
+        )
     else:
         # evento sem imagem: mantém a mesma proporção para alinhar o grid
         with ui.element("div").classes(

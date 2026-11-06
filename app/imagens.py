@@ -1,32 +1,22 @@
 """
-Armazenamento das imagens de banner dos eventos.
+Processamento das imagens de banner dos eventos.
 
-O arquivo enviado é convertido para JPEG e salvo na pasta ``upload`` da
-raiz do projeto, junto de uma miniatura de 400x225 (16:9, usada nos
-cartões da listagem). Os arquivos são servidos publicamente pela rota
-estática ``/imagens`` (registrada em ``app.main``) e o banco guarda apenas
-as URLs:
-
-- ``upload/banner/{uuid}.jpg`` -> ``/imagens/banner/{uuid}.jpg``
-- ``upload/banner/{uuid}_thumbnail.jpg`` -> ``/imagens/banner/{uuid}_thumbnail.jpg``
+O arquivo enviado é convertido para JPEG e reduzido a uma miniatura de
+400x225 (16:9, usada nos cartões da listagem). Os dois arquivos são
+guardados no banco, nas colunas ``BYTEA`` ``evento.banner`` e
+``evento.banner_thumbnail``, e exibidos no HTML como *data URL* em base64
+(``para_data_url``): não há arquivos em disco nem rota de imagens.
 
 O módulo não depende do NiceGUI nem do banco, então também é usado para
-gerar as imagens do script de população.
+gerar as imagens do script de população (``scripts/03_banners.sql``).
 """
 
+import base64
 import io
-import uuid
-from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.exceptions import ImagemInvalida
-
-# raiz do projeto (independe do diretório de onde a aplicação é executada)
-PASTA_UPLOAD = Path(__file__).resolve().parent.parent / "upload"
-PASTA_BANNER = PASTA_UPLOAD / "banner"
-URL_UPLOAD = "/imagens"
-URL_BANNER = f"{URL_UPLOAD}/banner"
 
 TAMANHO_THUMBNAIL = (400, 225)
 QUALIDADE_JPEG = 85
@@ -49,36 +39,29 @@ def _abrir_imagem(conteudo: bytes) -> Image.Image:
     return imagem.convert("RGB")
 
 
-def salvar_banner(conteudo: bytes) -> tuple[str, str]:
+def _jpeg(imagem: Image.Image) -> bytes:
+    saida = io.BytesIO()
+    imagem.save(saida, "JPEG", quality=QUALIDADE_JPEG)
+    return saida.getvalue()
+
+
+def processar_banner(conteudo: bytes) -> tuple[bytes, bytes]:
     """
-    Salva o banner e gera a miniatura, devolvendo as URLs públicas
-    ``(banner, banner_thumbnail)``.
+    Converte a imagem enviada em ``(banner, banner_thumbnail)``, ambos
+    JPEG, prontos para as colunas ``BYTEA`` do evento.
 
     A miniatura é recortada no centro para preencher exatamente 400x225,
-    sem distorcer a imagem.
+    sem distorcer a imagem. Lança ``ImagemInvalida`` se o arquivo não for
+    uma imagem.
     """
     imagem = _abrir_imagem(conteudo)
     thumbnail = ImageOps.fit(imagem, TAMANHO_THUMBNAIL, Image.Resampling.LANCZOS)
-
-    nome = uuid.uuid4()
-    PASTA_BANNER.mkdir(parents=True, exist_ok=True)
-    imagem.save(PASTA_BANNER / f"{nome}.jpg", "JPEG", quality=QUALIDADE_JPEG)
-    thumbnail.save(
-        PASTA_BANNER / f"{nome}_thumbnail.jpg", "JPEG", quality=QUALIDADE_JPEG
-    )
-    return f"{URL_BANNER}/{nome}.jpg", f"{URL_BANNER}/{nome}_thumbnail.jpg"
+    return _jpeg(imagem), _jpeg(thumbnail)
 
 
-def remover_banner(*urls: str | None) -> None:
+def para_data_url(jpeg: bytes) -> str:
     """
-    Remove os arquivos locais das URLs informadas. URLs externas (ou que
-    não apontem para um arquivo da pasta de banners) são ignoradas, então
-    é seguro chamar com qualquer valor das colunas ``banner``.
+    Data URL (``data:image/jpeg;base64,...``) para exibir os bytes de uma
+    imagem JPEG diretamente no ``src`` de um ``<img>``.
     """
-    for url in urls:
-        if not url or not url.startswith(f"{URL_BANNER}/"):
-            continue
-        arquivo = (PASTA_BANNER / url.removeprefix(f"{URL_BANNER}/")).resolve()
-        # impede que um valor como "../../x" apague algo fora da pasta
-        if arquivo.parent == PASTA_BANNER.resolve():
-            arquivo.unlink(missing_ok=True)
+    return "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")

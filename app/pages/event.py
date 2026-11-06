@@ -41,7 +41,6 @@ from app.exceptions import (
     EventoRepetido,
     HorarioAtividadeInvalido,
     IdadeAbaixoClassificacao,
-    ImagemInvalida,
     MinistranteRepetido,
     SemVagas,
     VagasAbaixoInscricoes,
@@ -60,7 +59,7 @@ from app.forms.evento import (
     limites_do_formulario,
 )
 from app.forms.ministrante import SeletorMinistrantes, seletor_ministrantes
-from app.imagens import remover_banner
+from app.imagens import para_data_url
 from app.modelos import ValoresEvento
 from app.pages.layout import (
     data_hora,
@@ -404,11 +403,7 @@ def dialogo_criar_evento(ao_sucesso: Callable[[int], None]) -> None:
                 atividades.append(entrada)
 
             try:
-                with valores.gravando_banner():
-                    evento = criar_evento(**valores.parametros(), atividades=atividades)
-            except ImagemInvalida:
-                ui.notify("O banner precisa ser um arquivo de imagem válido.")
-                return
+                evento = criar_evento(**valores.parametros(), atividades=atividades)
             except EventoRepetido:
                 ui.notify("Já existe um evento com esse nome.")
                 return
@@ -458,15 +453,8 @@ def dialogo_editar_evento(evento: Evento) -> None:
             valores = coletar_valores(formulario)
             if valores is None:
                 return
-            banner_anterior = (evento.banner, evento.banner_thumbnail)
             try:
-                with valores.gravando_banner():
-                    evento.atualizar(**valores.parametros())
-            except ImagemInvalida:
-                ui.notify(
-                    "O banner precisa ser um arquivo de imagem válido.", type="negative"
-                )
-                return
+                evento.atualizar(**valores.parametros())
             except VagasAbaixoInscricoes:
                 ui.notify(
                     "As vagas não podem ficar menores que o número de "
@@ -484,9 +472,6 @@ def dialogo_editar_evento(evento: Evento) -> None:
             except EventoRepetido:
                 ui.notify("Já existe um evento com esse nome.", type="negative")
                 return
-            # banner trocado ou removido: os arquivos antigos não são mais usados
-            if banner_anterior != (valores.banner, valores.banner_thumbnail):
-                remover_banner(*banner_anterior)
             dialogo.close()
             ui.notify("Evento atualizado.", type="positive")
             ui.navigate.to(f"/event/{evento.id}")
@@ -523,7 +508,6 @@ def _dialogo_excluir_evento(evento: Evento) -> None:
         if not removido:
             ui.notify("Evento não encontrado.", type="warning")
             return
-        remover_banner(evento.banner, evento.banner_thumbnail)
         fechar()
         ui.notify("Evento excluído.", type="positive")
         ui.navigate.to("/")
@@ -576,7 +560,7 @@ def pagina_evento(
 
         if evento.banner:
             _ = (
-                ui.image(evento.banner)
+                ui.image(para_data_url(evento.banner))
                 .classes("w-full rounded-borders")
                 .style("aspect-ratio: 3 / 1")
             )

@@ -3,9 +3,9 @@ Formulário de evento: context manager com os campos comuns aos dialogs de
 criação e edição, as validações que envolvem mais de um campo e a coleta
 validada dos valores (``ValoresEvento``, em ``app.modelos``).
 
-O banner é enviado como arquivo de imagem: os bytes ficam no formulário e
-só são gravados em disco (junto da miniatura, por ``app.imagens``) quando o
-evento é salvo. Datas e horários usam ``ui.date_input``/``ui.time_input``
+O banner é enviado como arquivo de imagem: assim que chega, é convertido
+em JPEG junto da miniatura (``app.imagens.processar_banner``) e os bytes
+ficam no formulário até o evento ser salvo nas colunas BYTEA. Datas e horários usam ``ui.date_input``/``ui.time_input``
 (dias em dia/mês/ano e horas em HH:MM) e são combinados em ``datetime`` na coleta.
 """
 
@@ -14,8 +14,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 
-from nicegui import events, ui
+from nicegui import events, run, ui
 
+from app.exceptions import ImagemInvalida
 from app.forms.validacao import (
     campo_com_erro,
     campo_data,
@@ -25,6 +26,7 @@ from app.forms.validacao import (
     validar_extremo,
     vazio_para_none,
 )
+from app.imagens import para_data_url, processar_banner
 from app.modelos import ValoresEvento
 
 # classificação indicativa -> rótulo do select; None = sem restrição de idade
@@ -48,8 +50,8 @@ TAMANHO_MAXIMO_BANNER = 10 * 1024 * 1024
 class FormularioEvento:
     """
     Referências aos campos de um formulário de evento e o estado do banner:
-    as URLs atuais (edição), a imagem nova enviada e se o banner atual deve
-    ser removido.
+    os JPEGs atuais (edição) ou os da imagem nova enviada; ``None`` quando
+    o evento fica sem banner.
     """
 
     nome: ui.input
@@ -64,9 +66,8 @@ class FormularioEvento:
     latitude: ui.number
     longitude: ui.number
     upload_banner: ui.upload
-    banner: str | None = None
-    banner_thumbnail: str | None = None
-    imagem_banner: bytes | None = None
+    banner: bytes | None = None
+    banner_thumbnail: bytes | None = None
 
 
 @contextmanager
@@ -146,13 +147,13 @@ def formulario_evento(
             ).classes("flex-grow")
         _ = ui.label("Banner").classes("text-caption text-grey-7")
         with ui.row().classes("w-full items-center gap-4"):
-            # miniatura do banner atual (edição), escondida quando não há banner
-            previa = ui.image(v.banner_thumbnail or "" if v else "").classes(
+            # miniatura do banner atual (ou da imagem nova), escondida quando
+            # não há banner
+            miniatura = v.banner_thumbnail if v else None
+            previa = ui.image(para_data_url(miniatura) if miniatura else "").classes(
                 "w-40 aspect-video rounded-borders"
             )
-            previa.visible = bool(v and v.banner_thumbnail)
-            arquivo = ui.label().classes("text-body2")
-            arquivo.visible = False
+            previa.visible = miniatura is not None
             remover = ui.button("Remover banner", icon="delete").props(
                 "flat dense no-caps color=negative"
             )
@@ -186,20 +187,26 @@ def formulario_evento(
         )
 
         async def imagem_enviada(e: events.UploadEventArguments) -> None:
-            # a validação da imagem (Pillow) acontece ao salvar o evento
-            formulario.imagem_banner = await e.file.read()
-            arquivo.text = f"Nova imagem: {e.file.name}"
-            arquivo.visible = True
-            previa.visible = False
-            remover.visible = True
+            conteudo = await e.file.read()
             # limpa a lista do uploader para permitir trocar a imagem
             upload_banner.reset()
+            try:
+                # o Pillow processa fora do loop de eventos (imagens grandes)
+                banner, thumbnail = await run.io_bound(processar_banner, conteudo)
+            except ImagemInvalida:
+                ui.notify(
+                    "O banner precisa ser um arquivo de imagem válido.",
+                    type="negative",
+                )
+                return
+            formulario.banner, formulario.banner_thumbnail = banner, thumbnail
+            previa.set_source(para_data_url(thumbnail))
+            previa.visible = remover.visible = True
 
         def remover_banner() -> None:
-            formulario.imagem_banner = None
             formulario.banner = None
             formulario.banner_thumbnail = None
-            previa.visible = arquivo.visible = remover.visible = False
+            previa.visible = remover.visible = False
 
         _ = upload_banner.on_upload(imagem_enviada)
         _ = upload_banner.on_rejected(
@@ -327,5 +334,4 @@ def coletar_valores(formulario: FormularioEvento) -> ValoresEvento | None:
         longitude=float(lng) if lng is not None else None,
         banner=formulario.banner,
         banner_thumbnail=formulario.banner_thumbnail,
-        imagem_banner=formulario.imagem_banner,
     )

@@ -15,18 +15,12 @@ deste módulo (entrada configurada em ``[tool.fastapi]`` no pyproject.toml)::
 """
 
 from fastapi import FastAPI
-from nicegui import app, ui
+from nicegui import ui
 
 from app import pages  # noqa: F401  (rotas das páginas criadas na importação)
 from app.api import router as api_router
 from app.auth import router as auth_router
 from app.database.settings import settings
-from app.imagens import PASTA_UPLOAD, URL_UPLOAD
-
-# imagens enviadas (banners dos eventos) ficam acessíveis publicamente em
-# /imagens/...; a pasta precisa existir antes de registrar a rota
-PASTA_UPLOAD.mkdir(parents=True, exist_ok=True)
-app.add_static_files(URL_UPLOAD, PASTA_UPLOAD)
 
 app = FastAPI(title="FBD 2026")
 
