@@ -21,12 +21,16 @@ from app import pages  # noqa: F401  (rotas das páginas criadas na importação
 from app.api import router as api_router
 from app.auth import router as auth_router
 from app.database.settings import settings
+from app.errors import registrar_tratamento_de_erros
 
 app = FastAPI(title="FBD 2026")
 
 # Rotas para operações não realizadas diretamente pelo Nicegui
 app.include_router(auth_router)
 app.include_router(api_router)
+
+# erros internos (ex.: banco fora do ar) não devem expor a exceção na tela
+registrar_tratamento_de_erros(app)
 
 # monta o NiceGUI (páginas e assets) em "/" do app FastAPI e habilita o
 # armazenamento por usuário (app.storage.user) com o segredo das settings

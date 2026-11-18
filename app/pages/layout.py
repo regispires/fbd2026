@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from math import ceil
 from typing import Any
+
 from nicegui import app, events, ui
 
 from app.database.repository.activity import PreviaAtividade
@@ -363,7 +364,9 @@ def paginacao(
         pagina = min(max(num_pagina, 1), ceil(total / por_pagina))
         inicio = (pagina - 1) * por_pagina + 1
         fim = min(inicio + por_pagina - 1, total)
-        _ = ui.label(f"Mostrando {inicio}–{fim} de {total}").classes("text-caption text-grey-7")
+        _ = ui.label(f"Mostrando {inicio}–{fim} de {total}").classes(
+            "text-caption text-grey-7"
+        )
         _ = (
             ui.pagination(
                 min=1,
