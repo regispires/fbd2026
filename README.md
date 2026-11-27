@@ -8,6 +8,8 @@ trabalho da disciplina de Fundamentos de Bancos de Dados.
 Em [./docs/regras-de-negocio.md](./docs/regras-de-negocio.md) estão definidos os requisitos 
 funcionais da aplicação.
 
+Os slides usados na aula estão disponibilizados em [./docs/apresentacao.pdf](./docs/apresentacao.pdf).
+
 ## Configuração
 
 A conexão com o banco e outras opções da aplicação são definidas através de variáveis de ambiente.
